@@ -14,6 +14,7 @@ config_dict = {
 def main():
     kem = EngineeringMetrics(config_dict)
     kem.jirametrics.populateProjects(['INT'])
+    kem.jirametrics.populateFromJQL('project = "OSO" ORDER BY Rank ASC')
 
     print('yay')
 

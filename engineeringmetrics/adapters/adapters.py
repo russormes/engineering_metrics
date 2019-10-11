@@ -172,15 +172,74 @@ class KJira:
         return issues_by_project
 
     def populateProjects(self, projectids: List[str]) -> Dict[str, Dict[str, object]]:
+        """Populate the Karhoo Jira instance with data from the Jira app.
+
+        Given a list of ids this method will build a dictionary containing issues from 
+        each project in the list. As well as retuning the data to the callee, this method
+        stores the results internally to facilitate the use of a range of helper methods
+        to analyse the data.
+
+        Args:
+            projectids: A list of project ids for which you want to pull issues.
+
+        Returns:
+            A dictionary of dictionaries, Each key will be the project id which maps to 
+            a dictionary of the form
+            {
+                "name" (str): Project name
+                "key"  (str): Project Key
+                "issues" List[KarhooTickets]: A list of wrapped Jira issues
+            }
+
+        """
         project_data = self._getProjectData(projectids)
-        self._datastore['projects'] = {
+        self._datastore['project_info'] = {
             **self._datastore['projects'], **project_data}
 
         issues_by_project = self._getJiraIssuesForProjects(
             project_data, projectids)
-        self._datastore['issues'] = {
+        self._datastore['issues_by_project'] = {
             **self._datastore['issues'], **issues_by_project}
         return issues_by_project
+
+    def populateFromJQL(self, query: str = None, label: str = "JQL") -> Dict[str, object]:
+        """Populate the Karhoo Jira instance with data from the Jira app accorging to a JQL
+        string.
+
+        Given a JQL string this method will build a dictionary containing issues returned 
+        by executing the query. As weel as retuning the data to the callee, this method
+        stores the results internally to facilitate the use of a range of helper methods
+        to analyse the data.
+
+        Args:
+            query: The JQL query to perform against the Jira data.
+            label (optional): A string label to store the quert result internally. If not set the query
+                    reult is stored undert the key 'JQL' and overwrites any previous query results.
+
+        Returns:
+            a dictionary of the form
+            {
+                "name" (str): Set to the query string
+                "key"  (str): Key used to store the result (set to label if provided or 'JQL' otherwise)
+                "issues" List[KarhooTickets]: A list of wrapped Jira issues
+            }
+
+        """
+        if query == None:
+            raise ValueError("query string is required to get issues")
+
+        result = self._client.search_issues(query,
+                                            maxResults=False,
+                                            expand='changelog'
+                                            )
+        issues = list(map(lambda i: KarhooTicket(i), result))
+        return_dict = {
+            "name": query,
+            "key": label,
+            "issues": issues
+        }
+        self._datastore[label] = return_dict
+        return return_dict
 
 
 def init_jira_adapter(jira_oauth_config_path: str = None, jira_access_token: str = None) -> KJira:
