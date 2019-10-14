@@ -13,9 +13,25 @@ from jira import JIRA
 import os
 
 
+class KarhooProject(dict):
+    """Karhoo Ticket
+    Representation of projects in Karhoo Jira.
+    """
+
+    def __init__(self, project: JIRA.project) -> None:
+        """Init a KarhooProject
+
+        Args:
+            project: A JIRA project instance
+        """
+        self['key'] = project.key
+        self['name'] = project.name
+        self['issues'] = []
+
+
 class KarhooTicket(dict):
     """Karhoo Ticket
-    Abstract representation of tickets in Karhoo issue tracker.
+    Representation of tickets in Karhoo Jira.
 
     Attributes:
         key (unicode): Unique identifier for the ticket in its system of record
@@ -31,7 +47,7 @@ class KarhooTicket(dict):
         """Init a KarhooTicket.
 
         Args:
-            key (str): A unique identifier for this ticket in the system of record
+            issue: A JIRA issue instance
         """
         # super(KarhooTicket, self).__init__()
         try:
@@ -137,37 +153,29 @@ class KJira:
             "projects": {}
         }
 
-    def _getProjectData(self, project_ids: List[str]) -> Dict[str, Dict[str, str]]:
-        # Get project level data for projects with ids from the project_ids list.
-        project_info: Dict[str, Dict[str, str]] = {}
-        for pid in project_ids:
-            pd: Dict[str, str] = {}
-            pdata = self._client.project(pid)
-            pd['key'] = pdata.key
-            pd['name'] = pdata.name
-            project_info[pdata.key] = pd
-        return project_info
-
-    def _getJiraIssuesForProjects(self, projects_data: Dict[str, Dict[str, str]], project_ids: List[str]) -> Dict[str, Dict[str, object]]:
+    def _getJiraIssuesForProjects(self, project_ids: List[str]) -> Dict[str, KarhooProject]:
 
         issues_by_project = {}
-        for k in project_ids:
-            proj = {}
+        for pid in project_ids:
+            print(f'Request data for project id {pid}')
+            pdata = self._client.project(pid)
+            print(f'Data received for project id {pid}')
+
+            proj = KarhooProject(pdata)
+            print(f'Request issues for project id {pid}')
             issues = self._client.search_issues(
-                'project = "{}" ORDER BY priority DESC'.format(k),
+                'project = "{}" ORDER BY priority DESC'.format(pid),
                 maxResults=False,
                 expand='changelog'
             )
+            print(f'Issues received for project id {pid}')
             # Does the query return the name?
-            proj['name'] = projects_data[k]['name']
-            proj['key'] = k
-            proj['issues'] = []
             for issue in issues:
                 kt = KarhooTicket(issue)
                 proj['issues'].append(kt)
 
             if len(proj.get('issues')):
-                issues_by_project[k] = proj
+                issues_by_project[pid] = proj
 
         return issues_by_project
 
@@ -183,8 +191,8 @@ class KJira:
             projectids: A list of project ids for which you want to pull issues.
 
         Returns:
-            A dictionary of dictionaries, Each key will be the project id which maps to 
-            a dictionary of the form
+            A dictionary of KarhooProjects, Each key will be the project id which maps to 
+            a KarhooProjects of the form
             {
                 "name" (str): Project name
                 "key"  (str): Project Key
@@ -192,15 +200,10 @@ class KJira:
             }
 
         """
-        project_data = self._getProjectData(projectids)
-        self._datastore['project_info'] = {
-            **self._datastore['projects'], **project_data}
-
-        issues_by_project = self._getJiraIssuesForProjects(
-            project_data, projectids)
-        self._datastore['issues_by_project'] = {
-            **self._datastore['issues'], **issues_by_project}
-        return issues_by_project
+        projects = self._getJiraIssuesForProjects(projectids)
+        self._datastore['projects'] = {
+            **self._datastore['projects'], **projects}
+        return projects
 
     def populateFromJQL(self, query: str = None, label: str = "JQL") -> Dict[str, object]:
         """Populate the Karhoo Jira instance with data from the Jira app accorging to a JQL
