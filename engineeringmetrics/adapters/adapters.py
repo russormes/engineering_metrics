@@ -6,6 +6,7 @@ pulling engineering metrics.
 """
 from dateutil.parser import parse
 from datetime import datetime
+import numpy as np
 from typing import List, Dict
 
 from configparser import ConfigParser
@@ -78,15 +79,21 @@ class KarhooTicket(dict):
         )
 
         try:
+            previous_item = None
             for history in issue.changelog.histories:
                 for item in history.items:
                     if item.field == 'status':
-                        self['_flow_log'].append(
-                            dict(
-                                entered_at=parse(history.created),
-                                state=str(item.toString)
-                            )
+                        new_log_item = dict(
+                            entered_at=parse(history.created),
+                            state=str(item.toString)
                         )
+                        if previous_item != None:
+                            previous_item['duration'] = np.busday_count(  # pylint: disable=unsupported-assignment-operation
+                                previous_item['entered_at'].date(), new_log_item['entered_at'].date())  # pylint: disable=unsupported-assignment-operation, unsubscriptable-object
+                        previous_item = new_log_item
+                        self['_flow_log'].append(new_log_item)
+            previous_item['duration'] = np.busday_count(
+                previous_item['entered_at'].date(), datetime.now().date())
         except AttributeError:
             pass
 
@@ -165,7 +172,7 @@ class KJira:
             print(f'Request issues for project id {pid}')
             issues = self._client.search_issues(
                 'project = "{}" ORDER BY priority DESC'.format(pid),
-                maxResults=False,
+                maxResults=10,
                 expand='changelog'
             )
             print(f'Issues received for project id {pid}')
@@ -182,7 +189,7 @@ class KJira:
     def populateProjects(self, projectids: List[str]) -> Dict[str, Dict[str, object]]:
         """Populate the Karhoo Jira instance with data from the Jira app.
 
-        Given a list of ids this method will build a dictionary containing issues from 
+        Given a list of ids this method will build a dictionary containing issues from
         each project in the list. As well as retuning the data to the callee, this method
         stores the results internally to facilitate the use of a range of helper methods
         to analyse the data.
@@ -191,7 +198,7 @@ class KJira:
             projectids: A list of project ids for which you want to pull issues.
 
         Returns:
-            A dictionary of KarhooProjects, Each key will be the project id which maps to 
+            A dictionary of KarhooProjects, Each key will be the project id which maps to
             a KarhooProjects of the form
             {
                 "name" (str): Project name
@@ -209,7 +216,7 @@ class KJira:
         """Populate the Karhoo Jira instance with data from the Jira app accorging to a JQL
         string.
 
-        Given a JQL string this method will build a dictionary containing issues returned 
+        Given a JQL string this method will build a dictionary containing issues returned
         by executing the query. As weel as retuning the data to the callee, this method
         stores the results internally to facilitate the use of a range of helper methods
         to analyse the data.
