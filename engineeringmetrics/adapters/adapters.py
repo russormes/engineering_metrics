@@ -14,23 +14,7 @@ from jira import JIRA
 import os
 
 
-class KarhooProject(dict):
-    """Karhoo Ticket
-    Representation of projects in Karhoo Jira.
-    """
-
-    def __init__(self, project: JIRA.project) -> None:
-        """Init a KarhooProject
-
-        Args:
-            project: A JIRA project instance
-        """
-        self['key'] = project.key
-        self['name'] = project.name
-        self['issues'] = []
-
-
-class KarhooTicket(dict):
+class JiraIssue(dict):
     """Karhoo Ticket
     Representation of tickets in Karhoo Jira.
 
@@ -45,16 +29,17 @@ class KarhooTicket(dict):
     """
 
     def __init__(self, issue: JIRA.issue) -> None:
-        """Init a KarhooTicket.
+        """Init a JiraIssue.
 
         Args:
             issue: A JIRA issue instance
         """
-        # super(KarhooTicket, self).__init__()
+        # super(JiraIssue, self).__init__()
         try:
             self['ttype'] = issue.fields.issuetype.name
         except AttributeError:
             self['ttype'] = "Ticket"
+        self['_issue'] = issue
         self['id'] = issue.id
         self['key'] = issue.key
         self['url'] = issue.permalink()
@@ -62,6 +47,8 @@ class KarhooTicket(dict):
         self['labels'] = issue.fields.labels
         self['created'] = parse(issue.fields.created)
         self['updated_at'] = parse(issue.fields.updated)
+        self['resolution'] = issue.fields.resolution
+        self['resolutiondate'] = issue.fields.resolutiondate
         self['assignee'] = issue.fields.assignee
         self['description'] = issue.fields.description
         self['priority'] = issue.fields.priority.__str__().split(':')[0]
@@ -92,8 +79,9 @@ class KarhooTicket(dict):
                                 previous_item['entered_at'].date(), new_log_item['entered_at'].date())  # pylint: disable=unsupported-assignment-operation, unsubscriptable-object
                         previous_item = new_log_item
                         self['_flow_log'].append(new_log_item)
-            previous_item['duration'] = np.busday_count(
-                previous_item['entered_at'].date(), datetime.now().date())
+            if previous_item != None:
+                previous_item['duration'] = np.busday_count(
+                    previous_item['entered_at'].date(), datetime.now().date())
         except AttributeError:
             pass
 
@@ -101,11 +89,31 @@ class KarhooTicket(dict):
     def flow_log(self):
         """FlowLog[dict].
 
-        A list of dicts guaranteed to have the following:
+        A list of dicts with the following keys:
             entered_at (datetime): When the ticket entered the state
             state (unicode): The name of the state the ticket entered
+            duration (int): Time spent in this state
         """
         return self['_flow_log']
+
+    @property
+    def cycleTime(self, resolution_status: str = None) -> int:
+        """Counts the number of business days an issue took to resolve. This is 
+        the number of weekdays between the created data and the resolution date
+        field on a ticket that is set to resolved. If no resolution date exists 
+        and the resolution_status paramter was passed the date a ticket entered the 
+        resolution status is used in place of resolution date.
+
+        If both a resolution date found and resolution_status is set the resolution date 
+        is used. If neither a resolution date or resolution status are found 0 is returned.
+
+        Args: 
+            resolution_status: A status to use in the case where no resolution date is set
+
+        Returns:
+            out: Number of days to resolve ticket or 0 if ticket is not resolved.
+        """
+        return np.busday_count(self['created'], self['resolutiondate'])
 
 
 class FlowLog(list):
@@ -146,11 +154,53 @@ class FlowLog(list):
         self.sort(key=lambda l: l['entered_at'])
 
 
-class KJira:
-    """An Engineering Metrics wrapper for data we can harvest from Jira
+class JiraProject(dict):
+    """Karhoo Ticket
+    Representation of projects in Karhoo Jira.
+
+    """
+
+    def __init__(self, project: JIRA.project) -> None:
+        """Init a JiraProject
+
+        Args:
+            project: A JIRA project instance
+        """
+        self['_key'] = project.key
+        self['_name'] = project.name
+        self['_issues'] = []
+
+    @property
+    def key(self) -> str:
+        """Key
+
+        The project name as it is in Jira.
+        """
+        return self['_key']
+
+    @property
+    def name(self) -> str:
+        """Name
+
+        The project name as it is in Jira.
+        """
+        return self['_name']
+
+    @property
+    def issues(self) -> List[JiraIssue]:
+        """Issues
+
+        A list of wrapped jira issues.
+        """
+        return self['_issues']
+
+
+class Jira:
+    """An Engineering Metrics wrapper for data we can harvest from Jira.
 
     Attributes:
-        jiraclient (object): The instance of Jiras python client used to pul the data from metrics.
+        jiraclient (JIRA): The instance of Jira's python client used to pull the data from metrics.
+        projects Dict[str, JiraProject]: A dictionary of Karhoo projects by project key.
     """
 
     def __init__(self, jiraclient: JIRA) -> None:
@@ -160,7 +210,7 @@ class KJira:
             "projects": {}
         }
 
-    def _getJiraIssuesForProjects(self, project_ids: List[str]) -> Dict[str, KarhooProject]:
+    def _getJiraIssuesForProjects(self, project_ids: List[str]) -> Dict[str, JiraProject]:
 
         issues_by_project = {}
         for pid in project_ids:
@@ -168,7 +218,7 @@ class KJira:
             pdata = self._client.project(pid)
             print(f'Data received for project id {pid}')
 
-            proj = KarhooProject(pdata)
+            proj = JiraProject(pdata)
             print(f'Request issues for project id {pid}')
             issues = self._client.search_issues(
                 'project = "{}" ORDER BY priority DESC'.format(pid),
@@ -176,17 +226,16 @@ class KJira:
                 expand='changelog'
             )
             print(f'Issues received for project id {pid}')
-            # Does the query return the name?
             for issue in issues:
-                kt = KarhooTicket(issue)
-                proj['issues'].append(kt)
+                kt = JiraIssue(issue)
+                proj.issues.append(kt)
 
-            if len(proj.get('issues')):
+            if len(proj.issues):
                 issues_by_project[pid] = proj
 
         return issues_by_project
 
-    def populateProjects(self, projectids: List[str]) -> Dict[str, Dict[str, object]]:
+    def populate_projects(self, projectids: List[str]) -> Dict[str, Dict[str, object]]:
         """Populate the Karhoo Jira instance with data from the Jira app.
 
         Given a list of ids this method will build a dictionary containing issues from
@@ -198,12 +247,12 @@ class KJira:
             projectids: A list of project ids for which you want to pull issues.
 
         Returns:
-            A dictionary of KarhooProjects, Each key will be the project id which maps to
-            a KarhooProjects of the form
+            A dictionary of JiraProjects, Each key will be the project id which maps to
+            a JiraProjects of the form
             {
                 "name" (str): Project name
                 "key"  (str): Project Key
-                "issues" List[KarhooTickets]: A list of wrapped Jira issues
+                "issues" List[JiraIssues]: A list of wrapped Jira issues
             }
 
         """
@@ -212,7 +261,7 @@ class KJira:
             **self._datastore['projects'], **projects}
         return projects
 
-    def populateFromJQL(self, query: str = None, label: str = "JQL") -> Dict[str, object]:
+    def populate_from_jql(self, query: str = None, label: str = "JQL") -> Dict[str, object]:
         """Populate the Karhoo Jira instance with data from the Jira app accorging to a JQL
         string.
 
@@ -231,18 +280,16 @@ class KJira:
             {
                 "name" (str): Set to the query string
                 "key"  (str): Key used to store the result (set to label if provided or 'JQL' otherwise)
-                "issues" List[KarhooTickets]: A list of wrapped Jira issues
+                "issues" List[JiraIssues]: A list of wrapped Jira issues
             }
 
         """
         if query == None:
             raise ValueError("query string is required to get issues")
 
-        result = self._client.search_issues(query,
-                                            maxResults=False,
-                                            expand='changelog'
-                                            )
-        issues = list(map(lambda i: KarhooTicket(i), result))
+        result = self._client.search_issues(
+            query, maxResults=False, expand='changelog')
+        issues = list(map(lambda i: JiraIssue(i), result))
         return_dict = {
             "name": query,
             "key": label,
@@ -251,8 +298,55 @@ class KJira:
         self._datastore[label] = return_dict
         return return_dict
 
+    def get_query_result(self, label: str = 'JQL') -> Dict[str, object]:
+        """Get a cached JQL query result dictionary
 
-def init_jira_adapter(jira_oauth_config_path: str = None, jira_access_token: str = None) -> KJira:
+        Args:
+            label (optional): The label supplied with the original query
+
+         Returns:
+            a dictionary of the form
+            {
+                "name" (str): Set to the query string
+                "key"  (str): Key used to store the result (set to label if provided or 'JQL' otherwise)
+                "issues" List[JiraIssues]: A list of wrapped Jira issues
+            }
+        """
+        return self._datastore[label]
+
+    def get_project(self, pid: str) -> JiraProject:
+        """Get a cached Kerhoo Project instance for a given pid
+
+        Args: 
+            pid: The project key assigned by Jira.
+
+        Returns: A Karhoo Project instance populated with its issues.
+
+        """
+        try:
+            project = self._datastore['projects'][pid]
+            return project
+        except KeyError:
+            return KeyError(f'No project with key {pid} in the cache. Have you called Jira.populate_projects(["{pid}"])?')
+
+    @property
+    def jiraclient(self) -> JIRA:
+        """JiraClient
+
+        The instance of Jira's python client wrapped by this adapter.
+        """
+        return self._client
+
+    @property
+    def projects(self) -> Dict[str, JiraProject]:
+        """Projects
+
+        A dictionary of Karhoo Project instances by project key e.g. INT
+        """
+        return self._datastore['projects']
+
+
+def init_jira_adapter(jira_oauth_config_path: str = None, jira_access_token: str = None) -> Jira:
     if jira_oauth_config_path != None:
         path_to_config = os.path.join(jira_oauth_config_path,
                                       '.oauthconfig/.oauth_jira_config')
@@ -284,4 +378,4 @@ def init_jira_adapter(jira_oauth_config_path: str = None, jira_access_token: str
             'key_cert': rsa_private_key
         }
 
-        return KJira(JIRA(oauth=oauth_dict, server=jira_url))
+        return Jira(JIRA(oauth=oauth_dict, server=jira_url))

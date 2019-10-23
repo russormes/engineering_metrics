@@ -34,8 +34,8 @@ class EngineeringMetrics:
         return data_adapters
 
     @property
-    def jirametrics(self) -> adapters.KJira:
-        """JiraMetrics[obj].
+    def jirametrics(self) -> adapters.Jira:
+        """JiraMetrics
 
         An engineering metrics adapter for using Jira as a data source.
         """
