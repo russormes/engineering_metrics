@@ -213,6 +213,15 @@ class JQLResult():
         """
         return self._issues
 
+    def resolved_issues(self):
+        """Return a list of just the issues that are understood to be resolved.
+
+        Returns:
+            A list of wrapped jira issues considered to be resolved.
+
+        """
+        return list(filter(lambda d: d['cycle_time'] > -1, self._issues))
+
 
 class JiraProject(JQLResult):
     """Karhoo Ticket
@@ -262,7 +271,7 @@ class Jira:
             "projects": {}
         }
 
-    def _getJiraIssuesForProjects(self, project_ids: List[str]) -> Dict[str, JiraProject]:
+    def _getJiraIssuesForProjects(self, project_ids: List[str],  max_results: int = False) -> Dict[str, JiraProject]:
 
         issues_by_project = {}
         for pid in project_ids:
@@ -275,7 +284,7 @@ class Jira:
             print(f'Request issues for project id {pid}')
             issues = self._client.search_issues(
                 query_string,
-                maxResults=10,
+                maxResults=max_results,
                 expand='changelog'
             )
             print(f'Issues received for project id {pid}')
@@ -288,7 +297,7 @@ class Jira:
 
         return issues_by_project
 
-    def populate_projects(self, projectids: List[str]) -> Dict[str, Dict[str, object]]:
+    def populate_projects(self, projectids: List[str],  max_results: int = False) -> Dict[str, Dict[str, object]]:
         """Populate the Karhoo Jira instance with data from the Jira app.
 
         Given a list of ids this method will build a dictionary containing issues from
@@ -309,12 +318,12 @@ class Jira:
             }
 
         """
-        projects = self._getJiraIssuesForProjects(projectids)
+        projects = self._getJiraIssuesForProjects(projectids,  max_results)
         self._datastore['projects'] = {
             **self._datastore['projects'], **projects}
         return projects
 
-    def populate_from_jql(self, query: str = None, label: str = "JQL") -> Dict[str, object]:
+    def populate_from_jql(self, query: str = None, max_results: int = False, label: str = "JQL") -> Dict[str, object]:
         """Populate the Karhoo Jira instance with data from the Jira app accorging to a JQL
         string.
 
@@ -341,7 +350,7 @@ class Jira:
             raise ValueError("query string is required to get issues")
 
         result = self._client.search_issues(
-            query, maxResults=False, expand='changelog')
+            query, maxResults=max_results, expand='changelog')
         issues = list(map(lambda i: JiraIssue(i), result))
         query_result = JQLResult(query, label, issues)
         self._datastore[query_result.label] = query_result
@@ -396,6 +405,17 @@ class Jira:
 
 
 def init_jira_adapter(jira_oauth_config_path: str = None, jira_access_token: str = None) -> Jira:
+    """Set up an adapter to pull data from Jira. Handles the auth flow and returns an instance of the Jira
+    class that facilitates metircs analysis around jira data.
+
+    Args:
+         jira_oauth_config_path (str): A string path to the oauth config setup. Used for Jira server.
+         jira_access_token (str): The access token for Jira cloud (it's coming!)
+
+    Returns:
+        An instance of the Jira adapter class
+
+    """
     if jira_oauth_config_path != None:
         path_to_config = os.path.join(jira_oauth_config_path,
                                       '.oauthconfig/.oauth_jira_config')
