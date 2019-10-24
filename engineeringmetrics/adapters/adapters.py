@@ -49,7 +49,8 @@ class JiraIssue(dict):
         self['created'] = parse(issue.fields.created)
         self['updated_at'] = parse(issue.fields.updated)
         self['resolution'] = issue.fields.resolution
-        self['resolutiondate'] = issue.fields.resolutiondate
+        self['resolutiondate'] = parse(
+            issue.fields.resolutiondate) if issue.fields.resolutiondate else None
         self['assignee'] = issue.fields.assignee
         self['description'] = issue.fields.description
         self['priority'] = issue.fields.priority.__str__().split(':')[0]
@@ -66,7 +67,8 @@ class JiraIssue(dict):
                 state=str("Created")
             )
         )
-
+        self['cycle_time'] = None
+        self.cycle_time()
         try:
             previous_item = None
             for history in issue.changelog.histories:
@@ -98,8 +100,7 @@ class JiraIssue(dict):
         """
         return self._flow_log
 
-    @property
-    def cycleTime(self, resolution_status: str = None) -> int:
+    def cycle_time(self, resolution_status: str = None) -> int:
         """Counts the number of business days an issue took to resolve. This is
         the number of weekdays between the created data and the resolution date
         field on a ticket that is set to resolved. If no resolution date exists
@@ -107,15 +108,33 @@ class JiraIssue(dict):
         resolution status is used in place of resolution date.
 
         If both a resolution date found and resolution_status is set the resolution date
-        is used. If neither a resolution date or resolution status are found 0 is returned.
+        is used. If neither a resolution date or resolution status are found -1 is returned.
 
         Args:
             resolution_status: A status to use in the case where no resolution date is set
 
         Returns:
-            out: Number of days to resolve ticket or 0 if ticket is not resolved.
+            out: Number of days to resolve ticket or -1 if ticket is not resolved.
         """
-        return np.busday_count(self['created'], self['resolutiondate'])
+        if self['cycle_time'] != None and self['cycle_time'] > -1:
+            return self['cycle_time']
+        self['cycle_time'] = -1
+
+        if self['resolution']:
+            if self['resolutiondate']:
+                self['cycle_time'] = np.busday_count(
+                    self['created'].date(), self['resolutiondate'].date())
+            elif resolution_status:
+                resolution_date = None
+                for log in self._flow_log:
+                    if log['state'] == resolution_status:
+                        resolution_date = log['entered_at']
+                if resolution_date != None:
+                    self['cycle_time'] = np.busday_count(
+                        self['created'].date(), resolution_date.date())
+
+        self['cycle_time'] = self['cycle_time']
+        return self['cycle_time']
 
 
 class FlowLog(list):
