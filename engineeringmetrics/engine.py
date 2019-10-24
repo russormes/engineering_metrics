@@ -3,7 +3,7 @@
 """Engineering Metrics"""
 
 from typing import Dict, Mapping
-from .adapters import adapters
+from engineeringmetrics import adapters
 
 
 class EngineeringMetrics:

@@ -3,7 +3,7 @@
 """Test
 A script to run some local tests on the library
 """
-from engineeringmetrics.engine import EngineeringMetrics
+from engineeringmetrics import EngineeringMetrics
 from pathlib import Path
 
 config_dict = {
