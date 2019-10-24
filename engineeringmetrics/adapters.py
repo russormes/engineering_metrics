@@ -15,17 +15,10 @@ import os
 
 
 class JiraIssue(dict):
-    """Karhoo Ticket
-    Representation of tickets in Karhoo Jira.
+    """Representation of tickets from Jira.
 
     Attributes:
-        key (unicode): Unique identifier for the ticket in its system of record
-        created_at (datetime): When was the ticket created
-        updated_at (datetime): When was the ticket last updated
-        type (str): The kind of ticket this is: Bug, Epic, Story, etc.
-
-    Optional Attributes:
-        title (unicode): The title of the ticket
+        issue (JIRA.issue): A Jira issue returned from a query
     """
 
     def __init__(self, issue: JIRA.issue) -> None:
@@ -91,12 +84,17 @@ class JiraIssue(dict):
 
     @property
     def flow_log(self):
-        """FlowLog[dict].
+        """
+        list: `flow_log`
+            A list of dicts with the following keys:
 
-        A list of dicts with the following keys:
-            entered_at (datetime): When the ticket entered the state
-            state (unicode): The name of the state the ticket entered
-            duration (int): Time spent in this state
+            ``"entered_at"``
+                When the ticket entered the state (datetime)
+            ``"state"``
+                The name of the state the ticket entered (string)
+            ``"duration"``
+                Time spent in this state (int)
+
         """
         return self._flow_log
 
@@ -114,7 +112,7 @@ class JiraIssue(dict):
             resolution_status: A status to use in the case where no resolution date is set
 
         Returns:
-            out: Number of days to resolve ticket or -1 if ticket is not resolved.
+            Number of days to resolve ticket or -1 if ticket is not resolved.
         """
         if self['cycle_time'] != None and self['cycle_time'] > -1:
             return self['cycle_time']
@@ -191,25 +189,19 @@ class JQLResult():
 
     @property
     def query(self) -> str:
-        """query
-
-        The query that was run for this result set.
+        """The query that was run for this result set.
         """
         return self._query
 
     @property
     def label(self) -> str:
-        """label
-
-        A label for this query.
+        """A label for this query.
         """
         return self._label
 
     @property
     def issues(self) -> List[JiraIssue]:
-        """Issues
-
-        A list of wrapped jira issues.
+        """A list of wrapped jira issues.
         """
         return self._issues
 
@@ -224,8 +216,7 @@ class JQLResult():
 
 
 class JiraProject(JQLResult):
-    """Karhoo Ticket
-    Representation of projects in Karhoo Jira.
+    """Representation of a project from Jira.
 
     """
 
@@ -241,17 +232,13 @@ class JiraProject(JQLResult):
 
     @property
     def key(self) -> str:
-        """Key
-
-        The project name as it is in Jira.
+        """The project key as it is in Jira.
         """
         return self._key
 
     @property
     def name(self) -> str:
-        """Name
-
-        The project name as it is in Jira.
+        """The project name as it is in Jira.
         """
         return self._name
 
@@ -261,7 +248,7 @@ class Jira:
 
     Attributes:
         jiraclient (JIRA): The instance of Jira's python client used to pull the data from metrics.
-        projects Dict[str, JiraProject]: A dictionary of Karhoo projects by project key.
+        projects Dict[str, JiraProject]: A dictionary of Jira projects by project key.
     """
 
     def __init__(self, jiraclient: JIRA) -> None:
@@ -298,7 +285,7 @@ class Jira:
         return issues_by_project
 
     def populate_projects(self, projectids: List[str],  max_results: int = False) -> Dict[str, Dict[str, object]]:
-        """Populate the Karhoo Jira instance with data from the Jira app.
+        """Populate the Jira instance with data from the Jira app.
 
         Given a list of ids this method will build a dictionary containing issues from
         each project in the list. As well as retuning the data to the callee, this method
@@ -309,13 +296,12 @@ class Jira:
             projectids: A list of project ids for which you want to pull issues.
 
         Returns:
-            A dictionary of JiraProjects, Each key will be the project id which maps to
-            a JiraProjects of the form
-            {
-                "name" (str): Project name
-                "key"  (str): Project Key
-                "issues" List[JiraIssues]: A list of wrapped Jira issues
-            }
+            A dictionary of JiraProjects, Each key will be the project id which maps to a JiraProjects of the form
+                {
+                    "name" (str): Project name
+                    "key"  (str): Project Key
+                    "issues" List[JiraIssues]: A list of wrapped Jira issues
+                }
 
         """
         projects = self._getJiraIssuesForProjects(projectids,  max_results)
@@ -324,11 +310,11 @@ class Jira:
         return projects
 
     def populate_from_jql(self, query: str = None, max_results: int = False, label: str = "JQL") -> Dict[str, object]:
-        """Populate the Karhoo Jira instance with data from the Jira app accorging to a JQL
+        """Populate the Jira instance with data from the Jira app accorging to a JQL
         string.
 
         Given a JQL string this method will build a dictionary containing issues returned
-        by executing the query. As weel as retuning the data to the callee, this method
+        by executing the query. As well as retuning the data to the callee, this method
         stores the results internally to facilitate the use of a range of helper methods
         to analyse the data.
 
@@ -339,11 +325,11 @@ class Jira:
 
         Returns:
             a dictionary of the form
-            {
-                "name" (str): Set to the query string
-                "key"  (str): Key used to store the result (set to label if provided or 'JQL' otherwise)
-                "issues" List[JiraIssues]: A list of wrapped Jira issues
-            }
+                {
+                    "name" (str): Set to the query string
+                    "key"  (str): Key used to store the result (set to label if provided or 'JQL' otherwise)
+                    "issues" List[JiraIssues]: A list of wrapped Jira issues
+                }
 
         """
         if query == None:
@@ -362,13 +348,14 @@ class Jira:
         Args:
             label (optional): The label supplied with the original query
 
-         Returns:
+        Returns:
             a dictionary of the form
-            {
-                "name" (str): Set to the query string
-                "key"  (str): Key used to store the result (set to label if provided or 'JQL' otherwise)
-                "issues" List[JiraIssues]: A list of wrapped Jira issues
-            }
+                {
+                    "name" (str): Set to the query string
+                    "key"  (str): Key used to store the result (set to label if provided or 'JQL' otherwise)
+                    "issues" List[JiraIssues]: A list of wrapped Jira issues
+                }
+
         """
         return self._datastore[label]
 
@@ -378,7 +365,7 @@ class Jira:
         Args: 
             pid: The project key assigned by Jira.
 
-        Returns: A Karhoo Project instance populated with its issues.
+        Returns: A JiraProject instance populated with its issues.
 
         """
         try:
@@ -399,7 +386,7 @@ class Jira:
     def projects(self) -> Dict[str, JiraProject]:
         """Projects
 
-        A dictionary of Karhoo Project instances by project key e.g. INT
+        A dictionary of Jira Project instances by project key e.g. INT
         """
         return self._datastore['projects']
 
@@ -409,12 +396,12 @@ def init_jira_adapter(jira_oauth_config_path: str = None, jira_access_token: str
     class that facilitates metircs analysis around jira data.
 
     Args:
-         jira_oauth_config_path (str): A string path to the oauth config setup. Used for Jira server.
-         jira_access_token (str): The access token for Jira cloud (it's coming!)
-
+        jira_oauth_config_path:
+            A string path to the oauth config setup. Used for Jira server.
+        jira_access_token:
+            The access token for Jira cloud (it's coming!)
     Returns:
-        An instance of the Jira adapter class
-
+        Jira: An instance of the Jira adapter class
     """
     if jira_oauth_config_path != None:
         path_to_config = os.path.join(jira_oauth_config_path,
