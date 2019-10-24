@@ -39,7 +39,8 @@ class JiraIssue(dict):
             self['ttype'] = issue.fields.issuetype.name
         except AttributeError:
             self['ttype'] = "Ticket"
-        self['_issue'] = issue
+        self._issue = issue
+
         self['id'] = issue.id
         self['key'] = issue.key
         self['url'] = issue.permalink()
@@ -57,8 +58,9 @@ class JiraIssue(dict):
         if len(issue.fields.fixVersions) > 0:
             self["fixVersion"] = issue.fields.fixVersions[0]
         self['updated_at'] = None
-        self['_flow_log'] = FlowLog()
-        self['_flow_log'].append(
+
+        self._flow_log = FlowLog()
+        self._flow_log.append(
             dict(
                 entered_at=self['created'],
                 state=str("Created")
@@ -78,7 +80,7 @@ class JiraIssue(dict):
                             previous_item['duration'] = np.busday_count(  # pylint: disable=unsupported-assignment-operation
                                 previous_item['entered_at'].date(), new_log_item['entered_at'].date())  # pylint: disable=unsupported-assignment-operation, unsubscriptable-object
                         previous_item = new_log_item
-                        self['_flow_log'].append(new_log_item)
+                        self._flow_log.append(new_log_item)
             if previous_item != None:
                 previous_item['duration'] = np.busday_count(
                     previous_item['entered_at'].date(), datetime.now().date())
@@ -94,20 +96,20 @@ class JiraIssue(dict):
             state (unicode): The name of the state the ticket entered
             duration (int): Time spent in this state
         """
-        return self['_flow_log']
+        return self._flow_log
 
     @property
     def cycleTime(self, resolution_status: str = None) -> int:
-        """Counts the number of business days an issue took to resolve. This is 
+        """Counts the number of business days an issue took to resolve. This is
         the number of weekdays between the created data and the resolution date
-        field on a ticket that is set to resolved. If no resolution date exists 
-        and the resolution_status paramter was passed the date a ticket entered the 
+        field on a ticket that is set to resolved. If no resolution date exists
+        and the resolution_status paramter was passed the date a ticket entered the
         resolution status is used in place of resolution date.
 
-        If both a resolution date found and resolution_status is set the resolution date 
+        If both a resolution date found and resolution_status is set the resolution date
         is used. If neither a resolution date or resolution status are found 0 is returned.
 
-        Args: 
+        Args:
             resolution_status: A status to use in the case where no resolution date is set
 
         Returns:
@@ -154,37 +156,35 @@ class FlowLog(list):
         self.sort(key=lambda l: l['entered_at'])
 
 
-class JiraProject(dict):
-    """Karhoo Ticket
-    Representation of projects in Karhoo Jira.
+class JQLResult():
 
-    """
-
-    def __init__(self, project: JIRA.project) -> None:
-        """Init a JiraProject
+    def __init__(self, query: str, label: str = 'JQL', issues: List[JiraIssue] = []) -> None:
+        """Init a JQLResult
 
         Args:
-            project: A JIRA project instance
+            query: The JQL query to perform against the Jira data.
+            label (optional): A string label to store the quert result internally. If not set the query
+                    reult is stored undert the key 'JQL' and overwrites any previous query results.
         """
-        self['_key'] = project.key
-        self['_name'] = project.name
-        self['_issues'] = []
+        self._query = query
+        self._label = label
+        self._issues = issues
 
     @property
-    def key(self) -> str:
-        """Key
+    def query(self) -> str:
+        """query
 
-        The project name as it is in Jira.
+        The query that was run for this result set.
         """
-        return self['_key']
+        return self._query
 
     @property
-    def name(self) -> str:
-        """Name
+    def label(self) -> str:
+        """label
 
-        The project name as it is in Jira.
+        A label for this query.
         """
-        return self['_name']
+        return self._label
 
     @property
     def issues(self) -> List[JiraIssue]:
@@ -192,7 +192,40 @@ class JiraProject(dict):
 
         A list of wrapped jira issues.
         """
-        return self['_issues']
+        return self._issues
+
+
+class JiraProject(JQLResult):
+    """Karhoo Ticket
+    Representation of projects in Karhoo Jira.
+
+    """
+
+    def __init__(self, project: JIRA.project, query_string: str = '') -> None:
+        """Init a JiraProject
+
+        Args:
+            project: A JIRA project instance
+        """
+        super().__init__(query_string, project.name)
+        self._key = project.key
+        self._name = project.name
+
+    @property
+    def key(self) -> str:
+        """Key
+
+        The project name as it is in Jira.
+        """
+        return self._key
+
+    @property
+    def name(self) -> str:
+        """Name
+
+        The project name as it is in Jira.
+        """
+        return self._name
 
 
 class Jira:
@@ -218,10 +251,11 @@ class Jira:
             pdata = self._client.project(pid)
             print(f'Data received for project id {pid}')
 
-            proj = JiraProject(pdata)
+            query_string = 'project = "{}" ORDER BY priority DESC'.format(pid)
+            proj = JiraProject(pdata, query_string)
             print(f'Request issues for project id {pid}')
             issues = self._client.search_issues(
-                'project = "{}" ORDER BY priority DESC'.format(pid),
+                query_string,
                 maxResults=10,
                 expand='changelog'
             )
@@ -290,13 +324,9 @@ class Jira:
         result = self._client.search_issues(
             query, maxResults=False, expand='changelog')
         issues = list(map(lambda i: JiraIssue(i), result))
-        return_dict = {
-            "name": query,
-            "key": label,
-            "issues": issues
-        }
-        self._datastore[label] = return_dict
-        return return_dict
+        query_result = JQLResult(query, label, issues)
+        self._datastore[query_result.label] = query_result
+        return query_result
 
     def get_query_result(self, label: str = 'JQL') -> Dict[str, object]:
         """Get a cached JQL query result dictionary
