@@ -1,7 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-"""Data Adapters
-This module handles creation and authorisation of a set of data source adapters for
+"""This module handles creation and authorisation of a set of data source adapters for
 pulling engineering metrics.
 """
 from dateutil.parser import parse
@@ -85,7 +84,7 @@ class JiraIssue(dict):
     @property
     def flow_log(self):
         """
-        list: `flow_log`
+        :py:class:`FlowLog`: `flow_log`
             A list of dicts with the following keys:
 
             ``"entered_at"``
@@ -136,13 +135,28 @@ class JiraIssue(dict):
 
 
 class FlowLog(list):
-    """List subclass enforcing dictionaries with specific keys are added to it."""
+    """List subclass enforcing dictionaries with specific keys are added to it.
+
+    A flow log is attached to each :py:class:`JiraIssue` in order to surface an issues journey
+    through the workflow. Each entry in a flow log is a dictionary with the following keys:
+
+        ``"entered_at"``
+            When the ticket entered the state (datetime)
+        ``"state"``
+            The name of the state the ticket entered (string)
+        ``"duration"``
+            Time spent in this state (int)
+
+    This should faciliate reporting on cycle time and should help to surface bottlenecks, by allowing
+    issues to be graphed with regard to the time they spend in each ``"state"`` of a workflow.
+
+    """
 
     def append(self, value):
         """Add items to the list.
 
         Args:
-            value (dict): Must contain an entered_at and state key.
+            value (dict): Must contain an ``"entered_at"`` and ``"state key"``.
 
         Returns:
             None
@@ -174,14 +188,24 @@ class FlowLog(list):
 
 
 class JQLResult():
+    """This class wraps the results of a JQL query in order to provide some convenience methods.
+
+    Args:
+        query: The JQL query that produces the result set.
+        label (optional): A string label used to cache the query result. If not set the default key
+            `JQL` is used and the result overwrites any previous query results.
+        issues: A list of :py:class:`JiraIssue` instances.
+
+    """
 
     def __init__(self, query: str, label: str = 'JQL', issues: List[JiraIssue] = []) -> None:
         """Init a JQLResult
 
         Args:
-            query: The JQL query to perform against the Jira data.
-            label (optional): A string label to store the quert result internally. If not set the query
-                    reult is stored undert the key 'JQL' and overwrites any previous query results.
+            query: The JQL query that produces the result set.
+            label (optional): A string label used to cache the query result. If not set the default key
+                `JQL` is used and the result overwrites any previous query results.
+            issues: A list of :py:class:`JiraIssue` instances.
         """
         self._query = query
         self._label = label
@@ -189,34 +213,44 @@ class JQLResult():
 
     @property
     def query(self) -> str:
-        """The query that was run for this result set.
+        """
+        str: `query`
+            The query that was run for this result set.
         """
         return self._query
 
     @property
     def label(self) -> str:
-        """A label for this query.
+        """
+        str: `label`
+            A label for this query.
         """
         return self._label
 
     @property
     def issues(self) -> List[JiraIssue]:
-        """A list of wrapped jira issues.
+        """
+         List[:py:class:`JiraIssue`]: `issues`
+            A list of :py:class:`JiraIssue` instances.
         """
         return self._issues
 
-    def resolved_issues(self):
+    def resolved_issues(self) -> List[JiraIssue]:
         """Return a list of just the issues that are understood to be resolved.
 
+            Currently this is implemented by filtering a list of issues to only contain
+            those with a cycle time greater that -1.
+
         Returns:
-            A list of wrapped jira issues considered to be resolved.
+            List[JiraIssue]: A list of :py:class:`JiraIssue` instances considered to be resolved.
 
         """
         return list(filter(lambda d: d['cycle_time'] > -1, self._issues))
 
 
 class JiraProject(JQLResult):
-    """Representation of a project from Jira.
+    """This subclass represents a project from Jira. It is realy only a convinience class
+        to wrap a JQL query that is intended to pull all issues from a project.
 
     """
 
@@ -224,7 +258,8 @@ class JiraProject(JQLResult):
         """Init a JiraProject
 
         Args:
-            project: A JIRA project instance
+            project (JiraProject): A JIRA project instance
+            query_string (srt): The query used to grab this project data.
         """
         super().__init__(query_string, project.name)
         self._key = project.key
@@ -232,23 +267,23 @@ class JiraProject(JQLResult):
 
     @property
     def key(self) -> str:
-        """The project key as it is in Jira.
+        """
+        str: `key`
+            The project key as it is in Jira.
         """
         return self._key
 
     @property
     def name(self) -> str:
-        """The project name as it is in Jira.
+        """
+        str: `name`
+            The project name as it is in Jira.
         """
         return self._name
 
 
 class Jira:
     """An Engineering Metrics wrapper for data we can harvest from Jira.
-
-    Attributes:
-        jiraclient (JIRA): The instance of Jira's python client used to pull the data from metrics.
-        projects Dict[str, JiraProject]: A dictionary of Jira projects by project key.
     """
 
     def __init__(self, jiraclient: JIRA) -> None:
@@ -284,32 +319,27 @@ class Jira:
 
         return issues_by_project
 
-    def populate_projects(self, projectids: List[str],  max_results: int = False) -> Dict[str, Dict[str, object]]:
+    def populate_projects(self, projectids: List[str],  max_results: int = False) -> Dict[str, JiraProject]:
         """Populate the Jira instance with data from the Jira app.
 
         Given a list of ids this method will build a dictionary containing issues from
-        each project in the list. As well as retuning the data to the callee, this method
+        each project in the list. As well as returning the data to the callee, this method
         stores the results internally to facilitate the use of a range of helper methods
         to analyse the data.
 
         Args:
             projectids: A list of project ids for which you want to pull issues.
+            max_results: Limit the number of issues returned by the query.
 
         Returns:
-            A dictionary of JiraProjects, Each key will be the project id which maps to a JiraProjects of the form
-                {
-                    "name" (str): Project name
-                    "key"  (str): Project Key
-                    "issues" List[JiraIssues]: A list of wrapped Jira issues
-                }
-
+            Dict[str, JiraProject]: A dictionary of JiraProjects. Each key will be the id for the corresponding project.
         """
         projects = self._getJiraIssuesForProjects(projectids,  max_results)
         self._datastore['projects'] = {
             **self._datastore['projects'], **projects}
         return projects
 
-    def populate_from_jql(self, query: str = None, max_results: int = False, label: str = "JQL") -> Dict[str, object]:
+    def populate_from_jql(self, query: str = None, max_results: int = False, label: str = "JQL") -> JQLResult:
         """Populate the Jira instance with data from the Jira app accorging to a JQL
         string.
 
@@ -320,17 +350,12 @@ class Jira:
 
         Args:
             query: The JQL query to perform against the Jira data.
-            label (optional): A string label to store the quert result internally. If not set the query
-                    reult is stored undert the key 'JQL' and overwrites any previous query results.
+            max_results: Limit the number of issues returned by the query.
+            label (optional): A string label to store the query result internally. If not set the query
+                result is stored under the key 'JQL' and overwrites any previous query results.
 
         Returns:
-            a dictionary of the form
-                {
-                    "name" (str): Set to the query string
-                    "key"  (str): Key used to store the result (set to label if provided or 'JQL' otherwise)
-                    "issues" List[JiraIssues]: A list of wrapped Jira issues
-                }
-
+            JQLResult: an instance of :py:class:`JQLResult`
         """
         if query == None:
             raise ValueError("query string is required to get issues")
@@ -349,24 +374,19 @@ class Jira:
             label (optional): The label supplied with the original query
 
         Returns:
-            a dictionary of the form
-                {
-                    "name" (str): Set to the query string
-                    "key"  (str): Key used to store the result (set to label if provided or 'JQL' otherwise)
-                    "issues" List[JiraIssues]: A list of wrapped Jira issues
-                }
+            JQLResult: an instance of :py:class:`JQLResult`
 
         """
         return self._datastore[label]
 
     def get_project(self, pid: str) -> JiraProject:
-        """Get a cached Kerhoo Project instance for a given pid
+        """Get a cached project for a given pid
 
-        Args: 
+        Args:
             pid: The project key assigned by Jira.
 
-        Returns: A JiraProject instance populated with its issues.
-
+        Returns:
+            JiraProject: A project.
         """
         try:
             project = self._datastore['projects'][pid]
@@ -376,17 +396,17 @@ class Jira:
 
     @property
     def jiraclient(self) -> JIRA:
-        """JiraClient
-
-        The instance of Jira's python client wrapped by this adapter.
+        """
+        JIRA: `jiraclient`
+            The instance of `Jira's python client <https://jira.readthedocs.io/en/master/>`_ wrapped by this adapter.
         """
         return self._client
 
     @property
     def projects(self) -> Dict[str, JiraProject]:
-        """Projects
-
-        A dictionary of Jira Project instances by project key e.g. INT
+        """
+        Dict[str, JiraProject]: `projects`
+            A dictionary of Jira Project instances by project key e.g. INT
         """
         return self._datastore['projects']
 

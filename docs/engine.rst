@@ -9,6 +9,9 @@ Engineering Metrics
     :undoc-members:
     :show-inheritance:
 
+Data Adapters
+-----------------------
+
 .. automodule:: engineeringmetrics.adapters
     :members:
     :undoc-members:

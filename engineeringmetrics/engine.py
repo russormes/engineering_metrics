@@ -1,21 +1,48 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-"""Engineering Metrics"""
+"""A library that provides a set of wrappers around data pulled from data sources from across the business"""
 
 from typing import Dict, Mapping
 from engineeringmetrics import adapters
 
 
 class EngineeringMetrics:
-    """Entry point to Engineering Metrics."""
+    """Entry point to Engineering Metrics.
+
+    The class accepts a configuration map in its constructor and 
+    uses that to configure a set of clients for pulling data from various
+    sources.
+
+    config is a dict with the following keys:
+
+        ``"jira_oauth_config_path"``
+            Path to the jira oauth config and keys (str)
+        ``"jira_access_token"``
+            A valid access token for Jira cloud (str)
+
+    Example usage:
+
+        To create an instance of the engineeringmetrics.EngineeringMetrics class:
+
+            >>> from engineeringmetrics import EngineeringMetrics
+            >>> from pathlib import Path
+            >>> config_dict = {
+                    'jira_oauth_config_path': Path.home()
+                }
+            >>> em = EngineeringMetrics(config_dict)
+
+    """
 
     def __init__(self, config: Dict[str, str]) -> None:
         """Init a EngineeringMetrics.
 
         Args:
             config: A dictionary of config parameters.
-                jira_oauth_config_path (str): Path to the jira oauth config and keys
-                jira_access_token (str): A valid access token for Jira cloud
+
+                ``"jira_oauth_config_path"``
+                    Path to the jira oauth config and keys (str)
+                ``"jira_access_token"``
+                    A valid access token for Jira cloud (str)
         """
         self._config: Dict[str, str] = config
         # A structure to store data source adapters for pulling in data to the metrics engine.
@@ -35,8 +62,9 @@ class EngineeringMetrics:
 
     @property
     def jirametrics(self) -> adapters.Jira:
-        """JiraMetrics
-
-        An engineering metrics adapter for using Jira as a data source.
+        """
+        Jira: `jirametrics`
+            If Jira authentication is configured in the constructor this property
+            is populated with an instance of the Jira adapter for pulling data from Jira.
         """
         return self._data_adapters['jira']
