@@ -1,7 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-"""Test
-A script to run some local tests on the library
+"""Example script to print out a markdown report
 """
 from engineeringmetrics import EngineeringMetrics
 from pathlib import Path
@@ -56,10 +55,8 @@ def main():
     md = createMarkdownReport(project_list['INT'])
     with open(MARKDOWN_FILE, 'w', encoding='utf-8') as f:
         f.write(md)
-    # print(kem.jirametrics.get_project('INT').issues[1].cycle_time())
-    # kem.jirametrics.populate_from_jql('project = "OSO" ORDER BY Rank ASC')
 
-    print('yay')
+    print('yay, we did it!')
 
 
 if __name__ == '__main__':
