@@ -249,7 +249,7 @@ class JQLResult():
 
 
 class JiraProject(JQLResult):
-    """This subclass represents a project from Jira. It is realy only a convinience class
+    """This subclass represents a project from Jira. It is realy only a convenience class
         to wrap a JQL query that is intended to pull all issues from a project.
 
     """
@@ -413,7 +413,7 @@ class Jira:
 
 def init_jira_adapter(jira_oauth_config_path: str = None, jira_access_token: str = None) -> Jira:
     """Set up an adapter to pull data from Jira. Handles the auth flow and returns an instance of the Jira
-    class that facilitates metircs analysis around jira data.
+    class that facilitates metircs analysis around Jira data.
 
     Args:
         jira_oauth_config_path:
