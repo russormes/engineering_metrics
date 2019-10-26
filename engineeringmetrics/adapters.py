@@ -13,6 +13,59 @@ from jira import JIRA
 import os
 
 
+class FlowLog(list):
+    """List subclass enforcing dictionaries with specific keys are added to it.
+
+    A flow log is attached to each :py:class:`JiraIssue` in order to surface an issues journey
+    through the workflow. Each entry in a flow log is a dictionary with the following keys:
+
+        ``"entered_at"``
+            When the ticket entered the state (datetime)
+        ``"state"``
+            The name of the state the ticket entered (string)
+        ``"duration"``
+            Time spent in this state (int)
+
+    This should faciliate reporting on cycle time and should help to surface bottlenecks, by allowing
+    issues to be graphed with regard to the time they spend in each ``"state"`` of a workflow.
+
+    """
+
+    def append(self, value: dict) -> None:
+        """Add items to the list.
+
+        Args:
+            value (dict): Must contain an ``"entered_at"`` and ``"state key"``.
+
+        Returns:
+            None
+
+        Raises:
+            TypeError: Flow log items must have a 'entered_at' datetime and a 'state' string.
+        """
+        try:
+            ('entered_at', 'state') in value.keys()
+        except AttributeError:
+            raise TypeError(
+                "Flow log items must have a 'entered_at' datetime and a 'state' string. Got: {value}".format(value=value))
+
+        entered_at = value['entered_at']
+        try:
+            datetime.now(entered_at.tzinfo) - entered_at
+        except (AttributeError, TypeError) as e:
+            msgvars = dict(
+                val_type=type(entered_at),
+                val=entered_at,
+                exc=str(e)
+            )
+            raise TypeError(
+                "Flow log items must have a entered_at datetime. Got: {val_type} / {val}, \n Exception: {exc}".format(**msgvars))
+
+        value[u'state'] = str(value['state'])
+        super(FlowLog, self).append(value)
+        self.sort(key=lambda l: l['entered_at'])
+
+
 class JiraIssue(dict):
     """Representation of tickets from Jira.
 
@@ -42,7 +95,7 @@ class JiraIssue(dict):
         self['updated_at'] = parse(issue.fields.updated)
         self['resolution'] = issue.fields.resolution
         self['resolutiondate'] = parse(
-            issue.fields.resolutiondate) if issue.fields.resolutiondate else None
+            issue.fields.resolutiondate) if issue.fields.resolutiondate else ''
         self['assignee'] = issue.fields.assignee
         self['description'] = issue.fields.description
         self['priority'] = issue.fields.priority.__str__().split(':')[0]
@@ -82,7 +135,7 @@ class JiraIssue(dict):
             pass
 
     @property
-    def flow_log(self):
+    def flow_log(self) -> FlowLog:
         """
         :py:class:`FlowLog`: `flow_log`
             A list of dicts with the following keys:
@@ -134,60 +187,7 @@ class JiraIssue(dict):
         return self['cycle_time']
 
 
-class FlowLog(list):
-    """List subclass enforcing dictionaries with specific keys are added to it.
-
-    A flow log is attached to each :py:class:`JiraIssue` in order to surface an issues journey
-    through the workflow. Each entry in a flow log is a dictionary with the following keys:
-
-        ``"entered_at"``
-            When the ticket entered the state (datetime)
-        ``"state"``
-            The name of the state the ticket entered (string)
-        ``"duration"``
-            Time spent in this state (int)
-
-    This should faciliate reporting on cycle time and should help to surface bottlenecks, by allowing
-    issues to be graphed with regard to the time they spend in each ``"state"`` of a workflow.
-
-    """
-
-    def append(self, value):
-        """Add items to the list.
-
-        Args:
-            value (dict): Must contain an ``"entered_at"`` and ``"state key"``.
-
-        Returns:
-            None
-
-        Raises:
-            TypeError: Flow log items must have a 'entered_at' datetime and a 'state' string.
-        """
-        try:
-            ('entered_at', 'state') in value.keys()
-        except AttributeError:
-            raise TypeError(
-                "Flow log items must have a 'entered_at' datetime and a 'state' string. Got: {value}".format(value=value))
-
-        entered_at = value['entered_at']
-        try:
-            datetime.now(entered_at.tzinfo) - entered_at
-        except (AttributeError, TypeError) as e:
-            msgvars = dict(
-                val_type=type(entered_at),
-                val=entered_at,
-                exc=str(e)
-            )
-            raise TypeError(
-                "Flow log items must have a entered_at datetime. Got: {val_type} / {val}, \n Exception: {exc}".format(**msgvars))
-
-        value[u'state'] = str(value['state'])
-        super(FlowLog, self).append(value)
-        self.sort(key=lambda l: l['entered_at'])
-
-
-class JQLResult():
+class JQLResult(object):
     """This class wraps the results of a JQL query in order to provide some convenience methods.
 
     Args:
@@ -249,7 +249,7 @@ class JQLResult():
 
 
 class JiraProject(JQLResult):
-    """This subclass represents a project from Jira. It is realy only a convenience class
+    """This subclass represents a project from Jira. It is really only a convenience class
         to wrap a JQL query that is intended to pull all issues from a project.
 
     """
@@ -261,7 +261,7 @@ class JiraProject(JQLResult):
             project (JiraProject): A JIRA project instance
             query_string (srt): The query used to grab this project data.
         """
-        super().__init__(query_string, project.name)
+        super().__init__(query_string, project.name, []) # The explicit [] avoids a caching issue
         self._key = project.key
         self._name = project.name
 
@@ -297,19 +297,19 @@ class Jira:
 
         issues_by_project = {}
         for pid in project_ids:
-            print(f'Request data for project id {pid}')
+            #print(f'Request pdata for project id {pid}')
             pdata = self._client.project(pid)
-            print(f'Data received for project id {pid}')
+            #print(f'pdata {pdata} received for project id {pid}')
 
             query_string = 'project = "{}" ORDER BY priority DESC'.format(pid)
             proj = JiraProject(pdata, query_string)
-            print(f'Request issues for project id {pid}')
+            print(f'{len(proj.issues)} existing issues for {pdata} project id {pid}')
             issues = self._client.search_issues(
                 query_string,
                 maxResults=max_results,
                 expand='changelog'
             )
-            print(f'Issues received for project id {pid}')
+            print(f'{len(issues)} issues received for project id {pid}')
             for issue in issues:
                 kt = JiraIssue(issue)
                 proj.issues.append(kt)
@@ -319,7 +319,7 @@ class Jira:
 
         return issues_by_project
 
-    def populate_projects(self, projectids: List[str],  max_results: int = False) -> Dict[str, JiraProject]:
+    def populate_projects(self, projectids: List[str], max_results: int = False) -> Dict[str, JiraProject]:
         """Populate the Jira instance with data from the Jira app.
 
         Given a list of ids this method will build a dictionary containing issues from
@@ -426,10 +426,7 @@ def init_jira_adapter(jira_oauth_config_path: str = None, jira_access_token: str
     if jira_oauth_config_path != None:
         path_to_config = os.path.join(jira_oauth_config_path,
                                       '.oauthconfig/.oauth_jira_config')
-        print()
-
-        print(
-            f'Reading OAuth from {path_to_config}')
+        #print(f'Reading OAuth from {path_to_config}')
 
         config = ConfigParser()
         config.read(path_to_config)
