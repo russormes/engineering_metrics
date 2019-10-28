@@ -209,7 +209,7 @@ class JQLResult(object):
         """
         self._query = query
         self._label = label
-        self._issues = issues
+        self._issues = issues or []
 
     @property
     def query(self) -> str:
@@ -261,7 +261,7 @@ class JiraProject(JQLResult):
             project (JiraProject): A JIRA project instance
             query_string (srt): The query used to grab this project data.
         """
-        super().__init__(query_string, project.name, []) # The explicit [] avoids a caching issue
+        super().__init__(query_string, project.name)
         self._key = project.key
         self._name = project.name
 
@@ -297,19 +297,15 @@ class Jira:
 
         issues_by_project = {}
         for pid in project_ids:
-            #print(f'Request pdata for project id {pid}')
             pdata = self._client.project(pid)
-            #print(f'pdata {pdata} received for project id {pid}')
 
             query_string = 'project = "{}" ORDER BY priority DESC'.format(pid)
             proj = JiraProject(pdata, query_string)
-            print(f'{len(proj.issues)} existing issues for {pdata} project id {pid}')
             issues = self._client.search_issues(
                 query_string,
                 maxResults=max_results,
                 expand='changelog'
             )
-            print(f'{len(issues)} issues received for project id {pid}')
             for issue in issues:
                 kt = JiraIssue(issue)
                 proj.issues.append(kt)
@@ -426,7 +422,6 @@ def init_jira_adapter(jira_oauth_config_path: str = None, jira_access_token: str
     if jira_oauth_config_path != None:
         path_to_config = os.path.join(jira_oauth_config_path,
                                       '.oauthconfig/.oauth_jira_config')
-        #print(f'Reading OAuth from {path_to_config}')
 
         config = ConfigParser()
         config.read(path_to_config)
