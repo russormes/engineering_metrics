@@ -8,7 +8,10 @@ from pathlib import Path
 import os
 
 config_dict = {
-    'jira_oauth_config_path': Path.home()
+    # 'jira_oauth_config_path': Path.home(),
+    'jira_username': 'russell.ormes@karhoo.com',
+    'jira_api_token': os.environ['JIRA_API_TOKEN'],
+    'jira_server_url': 'https://karhoo.atlassian.net'
 }
 
 
@@ -56,8 +59,9 @@ def main():
     md = createMarkdownReport(project_list['INT'])
     with open(MARKDOWN_FILE, 'w', encoding='utf-8') as f:
         f.write(md)
-    # print(kem.jirametrics.get_project('INT').issues[1].cycle_time())
-    # kem.jirametrics.populate_from_jql('project = "OSO" ORDER BY Rank ASC')
+    query_result = kem.jirametrics.populate_from_jql(
+        'project = "OSO" ORDER BY Rank ASC')
+    print(f'We got {len(query_result.issues)} issues from OSO')
 
     print('yay')
 
