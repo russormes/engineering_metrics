@@ -407,24 +407,35 @@ class Jira:
         return self._datastore['projects']
 
 
-def init_jira_adapter(jira_oauth_config_path: str = None, jira_access_token: str = None) -> Jira:
+def init_jira_adapter(jira_api_token: str = None, jira_oauth_config_path: str = None, jira_server_url: str = None, jira_username: str = None) -> Jira:
     """Set up an adapter to pull data from Jira. Handles the auth flow and returns an instance of the Jira
     class that facilitates metircs analysis around Jira data.
 
     Args:
+        jira_api_token:
+            The access token for Jira cloud (it's coming!)
         jira_oauth_config_path:
             A string path to the oauth config setup. Used for Jira server.
-        jira_access_token:
-            The access token for Jira cloud (it's coming!)
+        jira_server_url:
+            THe url of the jira instance to pull from.
+        jira_username:
+            The usename to use for authentication. Should be the username that owns the jira_api_token.
     Returns:
         Jira: An instance of the Jira adapter class
     """
+    if jira_api_token and jira_username and jira_server_url:
+        options = {
+            'server': jira_server_url
+        }
+        return Jira(JIRA(options, basic_auth=(jira_username, jira_api_token)))
+
     if jira_oauth_config_path != None:
         path_to_config = os.path.join(jira_oauth_config_path,
                                       '.oauthconfig/.oauth_jira_config')
 
         config = ConfigParser()
         config.read(path_to_config)
+
         jira_url = config.get("server_info", "jira_base_url")
         oauth_token = config.get("oauth_token_config", "oauth_token")
         oauth_token_secret = config.get(
