@@ -128,10 +128,10 @@ class JiraIssue(dict):
             pass
 
         self['lead_time'] = None
-        self.lead_time()
+        self.calculate_lead_time()
         # We do this after the flow log is built as cycle_time uses data from that log.
         self['cycle_time'] = None
-        self.cycle_time()
+        self.calculate_cycle_time()
 
     @property
     def flow_log(self) -> FlowLog:
@@ -149,7 +149,7 @@ class JiraIssue(dict):
         """
         return self._flow_log
 
-    def lead_time(self, resolution_status: str = 'Done') -> int:
+    def calculate_lead_time(self, resolution_status: str = 'Done') -> int:
         """Counts the number of business days an issue took to resolve. This is
         the number of weekdays between the created date and the resolution date
         field on a issue that is set to resolved. If no resolution date exists
@@ -165,8 +165,6 @@ class JiraIssue(dict):
         Returns:
             Number of days to resolve issue or -1 if issue is not resolved.
         """
-        if self['lead_time'] != None and self['lead_time'] > -1:
-            return self['lead_time']
         self['lead_time'] = -1
 
         if self['resolutiondate']:
@@ -183,7 +181,7 @@ class JiraIssue(dict):
 
         return self['lead_time']
 
-    def cycle_time(self, begin_status: str = 'In Progress', resolution_status: str = 'Done') -> int:
+    def calculate_cycle_time(self, begin_status: str = 'In Progress', resolution_status: str = 'Done') -> int:
         """Counts the number of business days an issue took to resolve once work had begun. As a
         issue is often created before work is stared this method uses the data a issue entered a
         particular state to indicate the start of work. IT assumes a state called "In Progress" if nothing
@@ -203,8 +201,6 @@ class JiraIssue(dict):
         Returns:
             Number of days to resolve issue or -1 if issue is not resolved.
         """
-        if self['cycle_time'] != None and self['cycle_time'] > -1:
-            return self['cycle_time']
         self['cycle_time'] = -1
 
         start_date = None
@@ -284,11 +280,11 @@ class JQLResult(object):
             A list of just the issues that are understood to be resolved.
 
             Currently this is implemented by filtering a list of issues to only contain
-            those with a cycle time greater that -1.
+            those with a lead time greater that -1.
         """
-        return list(filter(lambda d: d['cycle_time'] > -1, self._issues))
+        return list(filter(lambda d: d['lead_time'] > -1, self._issues))
 
-    def calculate_lead_times(self, resolution_status: str) -> None:
+    def calculate_lead_times(self, *args, **kwargs) -> None:
         """Calculate the lead times for all issues in this JQLResult instance.
 
         This method allows us to fix some issues that might be missing resolution data.
@@ -303,9 +299,9 @@ class JQLResult(object):
                 The issue status that indicates the issue was resolved
         """
         for issue in self._issues:
-            issue.lead_time(resolution_status)
+            issue.calculate_lead_time(*args, **kwargs)
 
-    def calculate_cycle_times(self, begin_status: str, resolution_status: str) -> None:
+    def calculate_cycle_times(self, *args, **kwargs) -> None:
         """Calculate the cycle times for all issues in this JQLResult instance.
 
         This method allows us to pass issue statuses to mark begining and end of work when
@@ -318,7 +314,7 @@ class JQLResult(object):
                 The issue status that indicates the issue was resolved
         """
         for issue in self._issues:
-            issue.cycle_time(begin_status, resolution_status)
+            issue.calculate_cycle_time(*args, **kwargs)
 
 
 class JiraProject(JQLResult):
