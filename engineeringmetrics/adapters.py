@@ -68,9 +68,6 @@ class FlowLog(list):
 
 class JiraIssue(dict):
     """Representation of tickets from Jira.
-
-    Attributes:
-        issue (JIRA.issue): A Jira issue returned from a query
     """
 
     def __init__(self, issue: JIRA.issue) -> None:
@@ -79,31 +76,29 @@ class JiraIssue(dict):
         Args:
             issue: A JIRA issue instance
         """
-        # super(JiraIssue, self).__init__()
         try:
             self['ttype'] = issue.fields.issuetype.name
         except AttributeError:
             self['ttype'] = "Ticket"
         self._issue = issue
 
-        self['id'] = issue.id
-        self['key'] = issue.key
-        self['url'] = issue.permalink()
-        self['summary'] = issue.fields.summary
-        self['labels'] = issue.fields.labels
-        self['created'] = parse(issue.fields.created)
-        self['updated_at'] = parse(issue.fields.updated)
-        self['resolution'] = issue.fields.resolution
-        self['resolutiondate'] = parse(
-            issue.fields.resolutiondate) if issue.fields.resolutiondate else ''
         self['assignee'] = issue.fields.assignee
+        self['created'] = parse(issue.fields.created)
         self['description'] = issue.fields.description
-        self['priority'] = issue.fields.priority.__str__().split(':')[0]
-        self['status'] = issue.fields.status
         self['fixVersion'] = None
         if len(issue.fields.fixVersions) > 0:
             self["fixVersion"] = issue.fields.fixVersions[0]
-        self['updated_at'] = None
+        self['id'] = issue.id
+        self['key'] = issue.key
+        self['labels'] = issue.fields.labels
+        self['priority'] = issue.fields.priority.__str__().split(':')[0]
+        self['resolution'] = issue.fields.resolution
+        self['resolutiondate'] = parse(
+            issue.fields.resolutiondate) if issue.fields.resolutiondate else ''
+        self['status'] = issue.fields.status
+        self['summary'] = issue.fields.summary
+        self['url'] = issue.permalink()
+        self['updated_at'] = parse(issue.fields.updated)
 
         self._flow_log = FlowLog()
         self._flow_log.append(
@@ -112,8 +107,6 @@ class JiraIssue(dict):
                 state=str("Created")
             )
         )
-        self['cycle_time'] = None
-        self.cycle_time()
         try:
             previous_item = None
             for history in issue.changelog.histories:
@@ -134,6 +127,12 @@ class JiraIssue(dict):
         except AttributeError:
             pass
 
+        self['lead_time'] = None
+        self.lead_time()
+        # We do this after the flow log is built as cycle_time uses data from that log.
+        self['cycle_time'] = None
+        self.cycle_time()
+
     @property
     def flow_log(self) -> FlowLog:
         """
@@ -150,11 +149,11 @@ class JiraIssue(dict):
         """
         return self._flow_log
 
-    def cycle_time(self, resolution_status: str = None) -> int:
+    def lead_time(self, resolution_status: str = 'Done') -> int:
         """Counts the number of business days an issue took to resolve. This is
-        the number of weekdays between the created data and the resolution date
+        the number of weekdays between the created date and the resolution date
         field on a ticket that is set to resolved. If no resolution date exists
-        and the resolution_status paramter was passed the date a ticket entered the
+        and the resolution_status paramater was passed the date a ticket entered the
         resolution status is used in place of resolution date.
 
         If both a resolution date found and resolution_status is set the resolution date
@@ -166,24 +165,67 @@ class JiraIssue(dict):
         Returns:
             Number of days to resolve ticket or -1 if ticket is not resolved.
         """
+        if self['lead_time'] != None and self['lead_time'] > -1:
+            return self['lead_time']
+        self['lead_time'] = -1
+
+        if self['resolutiondate']:
+            self['lead_time'] = np.busday_count(
+                self['created'].date(), self['resolutiondate'].date())
+        else:
+            resolution_date = None
+            for log in self._flow_log:
+                if log['state'] == resolution_status:
+                    resolution_date = log['entered_at']
+            if resolution_date != None:
+                self['lead_time'] = np.busday_count(
+                    self['created'].date(), resolution_date.date())
+
+        return self['lead_time']
+
+    def cycle_time(self, begin_status: str = 'In Progress', resolution_status: str = 'Done') -> int:
+        """Counts the number of business days an issue took to resolve once work had begun. As a
+        ticket is often created before work is stared this method uses the data a ticket entered a
+        particular state to indicate the start of work. IT assumes a state called "In Progress" if nothing
+        is given.
+
+        Cycle time is the number of weekdays between the start of work on the issue and the resolution
+        date field on a ticket that is set to resolved. If no resolution date exists and the resolution_status
+        paramater was passed the date a ticket entered the resolution status is used in place of resolution date.
+
+        If both a resolution date found and resolution_status is set the resolution date
+        is used. If neither a resolution date or resolution status are found -1 is returned.
+
+        Args:
+            begin_status: A status to use to understand when the work was started on this ticket
+            resolution_status: A status to use in the case where no resolution date is set
+
+        Returns:
+            Number of days to resolve ticket or -1 if ticket is not resolved.
+        """
         if self['cycle_time'] != None and self['cycle_time'] > -1:
             return self['cycle_time']
         self['cycle_time'] = -1
 
-        if self['resolution']:
-            if self['resolutiondate']:
-                self['cycle_time'] = np.busday_count(
-                    self['created'].date(), self['resolutiondate'].date())
-            elif resolution_status:
-                resolution_date = None
-                for log in self._flow_log:
-                    if log['state'] == resolution_status:
-                        resolution_date = log['entered_at']
-                if resolution_date != None:
-                    self['cycle_time'] = np.busday_count(
-                        self['created'].date(), resolution_date.date())
+        start_date = None
+        for log in self._flow_log:
+            if log['state'] == begin_status:
+                start_date = log['entered_at'].date()
+        if start_date == None:
+            start_date = self['created'].date()
 
-        self['cycle_time'] = self['cycle_time']
+        if self['resolutiondate']:
+            self['cycle_time'] = np.busday_count(
+                start_date, self['resolutiondate'].date())
+        else:
+            resolution_date = None
+            for log in self._flow_log:
+                if log['state'] == resolution_status:
+                    resolution_date = log['entered_at'].date()
+            if resolution_date != None:
+                self['cycle_time'] = np.busday_count(
+                    start_date, resolution_date)
+
         return self['cycle_time']
 
 
