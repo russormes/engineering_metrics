@@ -295,7 +295,7 @@ class JQLResult(object):
         not set on an given issue.
 
         Args:
-            resolution_status:
+            resolution_status (str):
                 The issue status that indicates the issue was resolved
         """
         for issue in self._issues:
@@ -308,9 +308,9 @@ class JQLResult(object):
         this data is not clear from the issue data retrieved in the query,
 
         Args:
-            begin_status:
+            begin_status (str):
                 The issue status that indicate work has started on this issue
-            resolution_status:
+            resolution_status (str):
                 The issue status that indicates the issue was resolved
         """
         for issue in self._issues:
