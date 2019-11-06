@@ -20,9 +20,9 @@ class FlowLog(list):
     through the workflow. Each entry in a flow log is a dictionary with the following keys:
 
         ``"entered_at"``
-            When the ticket entered the state (datetime)
+            When the issue entered the state (datetime)
         ``"state"``
-            The name of the state the ticket entered (string)
+            The name of the state the issue entered (string)
         ``"duration"``
             Time spent in this state (int)
 
@@ -67,10 +67,7 @@ class FlowLog(list):
 
 
 class JiraIssue(dict):
-    """Representation of tickets from Jira.
-
-    Attributes:
-        issue (JIRA.issue): A Jira issue returned from a query
+    """Representation of issues from Jira.
     """
 
     def __init__(self, issue: JIRA.issue) -> None:
@@ -79,31 +76,29 @@ class JiraIssue(dict):
         Args:
             issue: A JIRA issue instance
         """
-        # super(JiraIssue, self).__init__()
         try:
             self['ttype'] = issue.fields.issuetype.name
         except AttributeError:
             self['ttype'] = "Ticket"
         self._issue = issue
 
-        self['id'] = issue.id
-        self['key'] = issue.key
-        self['url'] = issue.permalink()
-        self['summary'] = issue.fields.summary
-        self['labels'] = issue.fields.labels
-        self['created'] = parse(issue.fields.created)
-        self['updated_at'] = parse(issue.fields.updated)
-        self['resolution'] = issue.fields.resolution
-        self['resolutiondate'] = parse(
-            issue.fields.resolutiondate) if issue.fields.resolutiondate else ''
         self['assignee'] = issue.fields.assignee
+        self['created'] = parse(issue.fields.created)
         self['description'] = issue.fields.description
-        self['priority'] = issue.fields.priority.__str__().split(':')[0]
-        self['status'] = issue.fields.status
         self['fixVersion'] = None
         if len(issue.fields.fixVersions) > 0:
             self["fixVersion"] = issue.fields.fixVersions[0]
-        self['updated_at'] = None
+        self['id'] = issue.id
+        self['key'] = issue.key
+        self['labels'] = issue.fields.labels
+        self['priority'] = issue.fields.priority.__str__().split(':')[0]
+        self['resolution'] = issue.fields.resolution
+        self['resolutiondate'] = parse(
+            issue.fields.resolutiondate) if issue.fields.resolutiondate else ''
+        self['status'] = issue.fields.status
+        self['summary'] = issue.fields.summary
+        self['url'] = issue.permalink()
+        self['updated_at'] = parse(issue.fields.updated)
 
         self._flow_log = FlowLog()
         self._flow_log.append(
@@ -112,8 +107,6 @@ class JiraIssue(dict):
                 state=str("Created")
             )
         )
-        self['cycle_time'] = None
-        self.cycle_time()
         try:
             previous_item = None
             for history in issue.changelog.histories:
@@ -134,6 +127,12 @@ class JiraIssue(dict):
         except AttributeError:
             pass
 
+        self['lead_time'] = None
+        self.calculate_lead_time()
+        # We do this after the flow log is built as cycle_time uses data from that log.
+        self['cycle_time'] = None
+        self.calculate_cycle_time()
+
     @property
     def flow_log(self) -> FlowLog:
         """
@@ -141,20 +140,20 @@ class JiraIssue(dict):
             A list of dicts with the following keys:
 
             ``"entered_at"``
-                When the ticket entered the state (datetime)
+                When the issue entered the state (datetime)
             ``"state"``
-                The name of the state the ticket entered (string)
+                The name of the state the issue entered (string)
             ``"duration"``
                 Time spent in this state (int)
 
         """
         return self._flow_log
 
-    def cycle_time(self, resolution_status: str = None) -> int:
+    def calculate_lead_time(self, resolution_status: str = 'Done') -> int:
         """Counts the number of business days an issue took to resolve. This is
-        the number of weekdays between the created data and the resolution date
-        field on a ticket that is set to resolved. If no resolution date exists
-        and the resolution_status paramter was passed the date a ticket entered the
+        the number of weekdays between the created date and the resolution date
+        field on a issue that is set to resolved. If no resolution date exists
+        and the resolution_status paramater was passed the date a issue entered the
         resolution status is used in place of resolution date.
 
         If both a resolution date found and resolution_status is set the resolution date
@@ -164,26 +163,65 @@ class JiraIssue(dict):
             resolution_status: A status to use in the case where no resolution date is set
 
         Returns:
-            Number of days to resolve ticket or -1 if ticket is not resolved.
+            Number of days to resolve issue or -1 if issue is not resolved.
         """
-        if self['cycle_time'] != None and self['cycle_time'] > -1:
-            return self['cycle_time']
+        self['lead_time'] = -1
+
+        if self['resolutiondate']:
+            self['lead_time'] = np.busday_count(
+                self['created'].date(), self['resolutiondate'].date())
+        else:
+            resolution_date = None
+            for log in self._flow_log:
+                if log['state'] == resolution_status:
+                    resolution_date = log['entered_at']
+            if resolution_date != None:
+                self['lead_time'] = np.busday_count(
+                    self['created'].date(), resolution_date.date())
+
+        return self['lead_time']
+
+    def calculate_cycle_time(self, begin_status: str = 'In Progress', resolution_status: str = 'Done') -> int:
+        """Counts the number of business days an issue took to resolve once work had begun. As a
+        issue is often created before work is stared this method uses the data a issue entered a
+        particular state to indicate the start of work. IT assumes a state called "In Progress" if nothing
+        is given.
+
+        Cycle time is the number of weekdays between the start of work on the issue and the resolution
+        date field on a issue that is set to resolved. If no resolution date exists and the resolution_status
+        paramater was passed the date a issue entered the resolution status is used in place of resolution date.
+
+        If both a resolution date found and resolution_status is set the resolution date
+        is used. If neither a resolution date or resolution status are found -1 is returned.
+
+        Args:
+            begin_status: A status to use to understand when the work was started on this issue
+            resolution_status: A status to use in the case where no resolution date is set
+
+        Returns:
+            Number of days to resolve issue or -1 if issue is not resolved.
+        """
         self['cycle_time'] = -1
 
-        if self['resolution']:
-            if self['resolutiondate']:
-                self['cycle_time'] = np.busday_count(
-                    self['created'].date(), self['resolutiondate'].date())
-            elif resolution_status:
-                resolution_date = None
-                for log in self._flow_log:
-                    if log['state'] == resolution_status:
-                        resolution_date = log['entered_at']
-                if resolution_date != None:
-                    self['cycle_time'] = np.busday_count(
-                        self['created'].date(), resolution_date.date())
+        start_date = None
+        for log in self._flow_log:
+            if log['state'] == begin_status:
+                start_date = log['entered_at'].date()
+        if start_date == None:
+            start_date = self['created'].date()
 
-        self['cycle_time'] = self['cycle_time']
+        if self['resolutiondate']:
+            self['cycle_time'] = np.busday_count(
+                start_date, self['resolutiondate'].date())
+        else:
+            resolution_date = None
+            for log in self._flow_log:
+                if log['state'] == resolution_status:
+                    resolution_date = log['entered_at'].date()
+            if resolution_date != None:
+                self['cycle_time'] = np.busday_count(
+                    start_date, resolution_date)
+
         return self['cycle_time']
 
 
@@ -230,22 +268,53 @@ class JQLResult(object):
     @property
     def issues(self) -> List[JiraIssue]:
         """
-         List[:py:class:`JiraIssue`]: `issues`
+        List[:py:class:`JiraIssue`]: `issues`
             A list of :py:class:`JiraIssue` instances.
         """
         return self._issues
 
+    @property
     def resolved_issues(self) -> List[JiraIssue]:
-        """Return a list of just the issues that are understood to be resolved.
+        """
+        List[:py:class:`JiraIssue`]: `issues`
+            A list of just the issues that are understood to be resolved.
 
             Currently this is implemented by filtering a list of issues to only contain
-            those with a cycle time greater that -1.
-
-        Returns:
-            List[JiraIssue]: A list of :py:class:`JiraIssue` instances considered to be resolved.
-
+            those with a lead time greater that -1.
         """
-        return list(filter(lambda d: d['cycle_time'] > -1, self._issues))
+        return list(filter(lambda d: d['lead_time'] > -1, self._issues))
+
+    def calculate_lead_times(self, *args, **kwargs) -> None:
+        """Calculate the lead times for all issues in this JQLResult instance.
+
+        This method allows us to fix some issues that might be missing resolution data.
+        We can pass an issue status that can be used to infer a resolution date if this is 
+        missing from an issue we intend as resloved.
+
+        The date an issue entered the resolution status is only used if the resolution date is
+        not set on an given issue.
+
+        Args:
+            resolution_status:
+                The issue status that indicates the issue was resolved
+        """
+        for issue in self._issues:
+            issue.calculate_lead_time(*args, **kwargs)
+
+    def calculate_cycle_times(self, *args, **kwargs) -> None:
+        """Calculate the cycle times for all issues in this JQLResult instance.
+
+        This method allows us to pass issue statuses to mark begining and end of work when
+        this data is not clear from the issue data retrieved in the query,
+
+        Args:
+            begin_status:
+                The issue status that indicate work has started on this issue
+            resolution_status:
+                The issue status that indicates the issue was resolved
+        """
+        for issue in self._issues:
+            issue.calculate_cycle_time(*args, **kwargs)
 
 
 class JiraProject(JQLResult):
@@ -345,9 +414,12 @@ class Jira:
         to analyse the data.
 
         Args:
-            query: The JQL query to perform against the Jira data.
-            max_results: Limit the number of issues returned by the query.
-            label (optional): A string label to store the query result internally. If not set the query
+            query: 
+                The JQL query to perform against the Jira data.
+            max_results:
+                Limit the number of issues returned by the query.
+            label (optional):
+                A string label to store the query result internally. If not set the query
                 result is stored under the key 'JQL' and overwrites any previous query results.
 
         Returns:
