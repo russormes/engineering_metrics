@@ -100,6 +100,7 @@ class JiraIssue(dict):
         self['url'] = issue.permalink()
         self['updated_at'] = parse(issue.fields.updated)
 
+        self._parent = getattr(issue.fields, 'parent', None)
         self._flow_log = FlowLog()
         self._flow_log.append(
             dict(
@@ -148,6 +149,16 @@ class JiraIssue(dict):
 
         """
         return self._flow_log
+
+    @property
+    def parent(self) -> str:
+        """
+        str: `parent`
+            Issues types that are sub-types of other issue types have a parent issue. This property
+            records the parent issue id.
+
+        """
+        return self._parent
 
     def calculate_lead_time(self, resolution_status: str = 'Done') -> int:
         """Counts the number of business days an issue took to resolve. This is
@@ -223,6 +234,35 @@ class JiraIssue(dict):
                     start_date, resolution_date)
 
         return self['cycle_time']
+
+    __PROTECTED_FIELDS__ = ['id', 'ttype']
+
+    def flitered_copy(self, fields_filter: List[str]) -> 'JiraIssue':
+        """Return a copy of this JiraIssue instance with only the set of fields defined in the fields_filter list.
+
+        id and ttype are protected fields and cannot be removed by this method.
+
+        Args:
+            fields_filter:
+                List of field names to include in the filtered copy. Available fields are
+                ``"assignee"``, ``"created"``, ``"cycle_time"``, ``"description"``, ``"fixVersion"``, ``"fixVersion"``, ``"id"``, ``"key"``,
+                ``"labels"``, ``"lead_time"``, ``"parent"``, ``"priority"``, ``"resolution"``, ``"resolutiondate"``, ``"status"``, ``"summary"``, ``"ttype"``,
+                ``"url"``, ``"updated_at"``
+
+        Returns:
+            JiraIssue: A filtered copy of this issue.
+        """
+
+        filtered = JiraIssue(self._issue)
+        if type(fields_filter) is list:
+            fields_filter = set().union(self.__PROTECTED_FIELDS__, fields_filter)
+            to_delete = set(filtered.keys()).difference(fields_filter)
+            for d in to_delete:
+                del filtered[d]
+        # We have to copy parent from a property into the map if it is a requested field
+        if 'parent' in fields_filter:
+            filtered['parent'] = filtered.parent
+        return filtered
 
 
 class JQLResult(object):
@@ -315,6 +355,49 @@ class JQLResult(object):
         """
         for issue in self._issues:
             issue.calculate_cycle_time(*args, **kwargs)
+
+    def filter(self, issue_type_filter: List[str] = None, fields_filter: List[str] = None) -> 'JQLResult':
+        """Filter the issues in this JQLResult instance.
+
+        This method can be used to either filter out some issues you are interested in, select just
+        the fields you want to use (for example to produce a pandas dataframe) or do a combination of
+        both.
+
+        Args:
+            fields_filter:
+                A list of fields to return on each issue. Available fields are
+                ``"assignee"``, ``"created"``, ``"cycle_time"``, ``"description"``, ``"fixVersion"``, ``"fixVersion"``, ``"id"``, ``"key"``,
+                ``"labels"``, ``"lead_time"``, ``"parent"``, ``"priority"``, ``"resolution"``, ``"resolutiondate"``, ``"status"``, ``"summary"``, ``"ttype"``,
+                ``"url"``, ``"updated_at"``
+
+            issue_type_filter:
+                A list of issue types to return
+
+        Returns:
+            JQLResult: An new JQLResult instance with a shallow copy of the filtered issues.
+
+        Examples:
+            To filter a previous query set.
+
+                .. code-block:: python
+
+                    query_result = jm.populate_from_jql(
+                            'project = "INT" AND issuetype in ("Sub-task", "Story")')
+                    filtered = query_result.filter(['Sub-task'])
+        """
+
+        # Make a copy of the issues from this query to not return references to the exitsing ones.
+        filtered_issues = list(map(lambda i: JiraIssue(i._issue), self.issues))
+        filtered_label = self.label + '_filtered'
+
+        if type(issue_type_filter) is list:
+            filtered_issues = list(
+                filter(lambda fi: fi['ttype'] in issue_type_filter, filtered_issues))
+
+        if type(fields_filter) is list:
+            filtered_issues = list(map(lambda ffi: ffi.flitered_copy(
+                fields_filter), filtered_issues))
+        return JQLResult(self.query, filtered_label, filtered_issues)
 
 
 class JiraProject(JQLResult):
