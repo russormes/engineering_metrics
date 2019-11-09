@@ -100,7 +100,9 @@ class JiraIssue(dict):
         self['url'] = issue.permalink()
         self['updated_at'] = parse(issue.fields.updated)
 
-        self._parent = getattr(issue.fields, 'parent', None)
+        parent = getattr(issue.fields, 'parent', None)
+        self._parent = parent.key if parent else parent
+
         self._flow_log = FlowLog()
         self._flow_log.append(
             dict(
@@ -160,7 +162,7 @@ class JiraIssue(dict):
         """
         return self._parent
 
-    def calculate_lead_time(self, resolution_status: str = 'Done') -> int:
+    def calculate_lead_time(self, resolution_status: str = 'Done', override: bool = False) -> int:
         """Counts the number of business days an issue took to resolve. This is
         the number of weekdays between the created date and the resolution date
         field on a issue that is set to resolved. If no resolution date exists
@@ -178,7 +180,7 @@ class JiraIssue(dict):
         """
         self['lead_time'] = -1
 
-        if self['resolutiondate']:
+        if self['resolutiondate'] and not override:
             self['lead_time'] = np.busday_count(
                 self['created'].date(), self['resolutiondate'].date())
         else:
@@ -235,7 +237,7 @@ class JiraIssue(dict):
 
         return self['cycle_time']
 
-    __PROTECTED_FIELDS__ = ['id', 'ttype']
+    __PROTECTED_FIELDS__ = ['key', 'ttype']
 
     def flitered_copy(self, fields_filter: List[str]) -> 'JiraIssue':
         """Return a copy of this JiraIssue instance with only the set of fields defined in the fields_filter list.
