@@ -5,12 +5,77 @@ pulling engineering metrics.
 """
 from dateutil.parser import parse
 from datetime import datetime
+from datetime import timedelta
 import numpy as np
 from typing import List, Dict
 
 from configparser import ConfigParser
 from jira import JIRA
 import os
+
+
+def busday_duration(date_a: datetime, date_b: datetime = None, interval="hours") -> int:
+    """
+    Returns a duration as specified by variable interval. Only includes business days.
+    Functions, except totalDuration, returns[quotient, remainder]
+
+    Args:
+        date_a:
+            First date
+        date_a (Optional):
+            Second date
+
+    Returns:
+        The duration between the two dates in the interval indicated (or hours if none is given)
+
+    """
+    if date_b == None:
+        date_b = datetime.now(date_a.tzinfo)
+    full_duration = date_b - date_a
+    # pylint: disable=no-member
+    bus_days = np.busday_count(
+        date_a.date(), date_b.date()).item()
+    duration = full_duration - \
+        timedelta(days=(full_duration.days - bus_days))
+    duration_in_s = duration.total_seconds()
+
+    def years():
+        return divmod(duration_in_s, 31556926)  # Seconds in a year=31556926.
+
+    def days(seconds=None):
+        # Seconds in a day = 86400
+        return divmod(seconds if seconds != None else duration_in_s, 86400)
+
+    def hours(seconds=None):
+        # Seconds in an hour = 3600
+        return divmod(seconds if seconds != None else duration_in_s, 3600)
+
+    def minutes(seconds=None):
+        # Seconds in a minute = 60
+        return divmod(seconds if seconds != None else duration_in_s, 60)
+
+    def seconds(seconds=None):
+        if seconds != None:
+            return divmod(seconds, 1)
+        return duration_in_s
+
+    def totalDuration():
+        y = years()
+        d = days(y[1])  # Use remainder to calculate next variable
+        h = hours(d[1])
+        m = minutes(h[1])
+        s = seconds(m[1])
+
+        return "Time between dates: {} years, {} days, {} hours, {} minutes and {} seconds".format(int(y[0]), int(d[0]), int(h[0]), int(m[0]), int(s[0]))
+
+    return {
+        'years': int(years()[0]),
+        'days': int(days()[0]),
+        'hours': int(hours()[0]),
+        'minutes': int(minutes()[0]),
+        'seconds': int(seconds()),
+        'default': totalDuration()
+    }[interval]
 
 
 class FlowLog(list):
@@ -64,6 +129,14 @@ class FlowLog(list):
         value[u'state'] = str(value['state'])
         super(FlowLog, self).append(value)
         self.sort(key=lambda l: l['entered_at'])
+
+    def as_dict(self) -> Dict[str, str]:
+        log_as_dic = {}
+        for item in self:
+            status = item['state']
+            log_as_dic[status] = log_as_dic.get(
+                status, 0) + item.get('duration', 0)
+        return log_as_dic
 
 
 class JiraIssue(dict):
@@ -120,13 +193,13 @@ class JiraIssue(dict):
                             state=str(item.toString)
                         )
                         if previous_item != None:
-                            previous_item['duration'] = np.busday_count(  # pylint: disable=unsupported-assignment-operation
-                                previous_item['entered_at'].date(), new_log_item['entered_at'].date())  # pylint: disable=unsupported-assignment-operation, unsubscriptable-object
+                            previous_item['duration'] = busday_duration(  # pylint: disable=unsupported-assignment-operation
+                                previous_item['entered_at'], new_log_item['entered_at'])  # pylint: disable=unsupported-assignment-operation, unsubscriptable-object
                         previous_item = new_log_item
                         self._flow_log.append(new_log_item)
             if previous_item != None:
-                previous_item['duration'] = np.busday_count(
-                    previous_item['entered_at'].date(), datetime.now().date())
+                previous_item['duration'] = busday_duration(
+                    previous_item['entered_at'], datetime.now(previous_item['entered_at'].tzinfo))
         except AttributeError:
             pass
 
@@ -181,16 +254,16 @@ class JiraIssue(dict):
         self['lead_time'] = -1
 
         if self['resolutiondate'] and not override:
-            self['lead_time'] = np.busday_count(
-                self['created'].date(), self['resolutiondate'].date())
+            self['lead_time'] = busday_duration(
+                self['created'], self['resolutiondate'])
         else:
             resolution_date = None
             for log in self._flow_log:
                 if log['state'] == resolution_status:
                     resolution_date = log['entered_at']
             if resolution_date != None:
-                self['lead_time'] = np.busday_count(
-                    self['created'].date(), resolution_date.date())
+                self['lead_time'] = busday_duration(
+                    self['created'], resolution_date)
 
         return self['lead_time']
 
@@ -219,20 +292,20 @@ class JiraIssue(dict):
         start_date = None
         for log in self._flow_log:
             if log['state'] == begin_status:
-                start_date = log['entered_at'].date()
+                start_date = log['entered_at']
         if start_date == None:
-            start_date = self['created'].date()
+            start_date = self['created']
 
         if self['resolutiondate']:
-            self['cycle_time'] = np.busday_count(
-                start_date, self['resolutiondate'].date())
+            self['cycle_time'] = busday_duration(
+                start_date, self['resolutiondate'])
         else:
             resolution_date = None
             for log in self._flow_log:
                 if log['state'] == resolution_status:
-                    resolution_date = log['entered_at'].date()
+                    resolution_date = log['entered_at']
             if resolution_date != None:
-                self['cycle_time'] = np.busday_count(
+                self['cycle_time'] = busday_duration(
                     start_date, resolution_date)
 
         return self['cycle_time']
@@ -357,6 +430,25 @@ class JQLResult(object):
         """
         for issue in self._issues:
             issue.calculate_cycle_time(*args, **kwargs)
+
+    def expand_issue_flow_logs(self):
+        """Add all flow log statuses as properties on the items with the duration of that status as the value.
+        This method alters the issues set of the current JQLResult in place. To undo would require using the filter
+        method to select just the properties of interest.
+
+        This is useful if you wish to plot graphs around how long issues where in each status during work intervals.
+
+        Examples:
+            To expand the flowlogs.
+
+                .. code-block:: python
+
+                    query_result = jm.populate_from_jql(
+                            'project = "INT" AND issuetype in ("Sub-task", "Story")')
+                    query_result.expand_issue_flow_logs()
+        """
+        for issue in self._issues:
+            issue.update(issue.flow_log.as_dict())
 
     def filter(self, issue_type_filter: List[str] = None, fields_filter: List[str] = None) -> 'JQLResult':
         """Filter the issues in this JQLResult instance.
