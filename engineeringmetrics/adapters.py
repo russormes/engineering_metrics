@@ -14,10 +14,20 @@ from jira import JIRA
 import os
 
 
-def busday_duration(date_a, date_b=None, interval="hours"):
+def busday_duration(date_a: datetime, date_b: datetime = None, interval="hours") -> int:
     """
-    Returns a duration as specified by variable interval
+    Returns a duration as specified by variable interval. Only includes business days.
     Functions, except totalDuration, returns[quotient, remainder]
+
+    Args:
+        date_a:
+            First date
+        date_a (Optional):
+            Second date
+
+    Returns:
+        The duration between the two dates in the interval indicated (or hours if none is given)
+
     """
     if date_b == None:
         date_b = datetime.now(date_a.tzinfo)
@@ -121,7 +131,12 @@ class FlowLog(list):
         self.sort(key=lambda l: l['entered_at'])
 
     def as_dict(self) -> Dict[str, str]:
-        pass
+        log_as_dic = {}
+        for item in self:
+            status = item['state']
+            log_as_dic[status] = log_as_dic.get(
+                status, 0) + item.get('duration', 0)
+        return log_as_dic
 
 
 class JiraIssue(dict):
