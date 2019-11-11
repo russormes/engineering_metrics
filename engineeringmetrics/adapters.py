@@ -431,6 +431,25 @@ class JQLResult(object):
         for issue in self._issues:
             issue.calculate_cycle_time(*args, **kwargs)
 
+    def expand_issue_flow_logs(self):
+        """Add all flow log statuses as properties on the items with the duration of that status as the value.
+        This method alters the issues set of the current JQLResult in place. To undo would require using the filter
+        method to select just the properties of interest.
+
+        This is useful if you wish to plot graphs around how long issues where in each status during work intervals.
+
+        Examples:
+            To expand the flowlogs.
+
+                .. code-block:: python
+
+                    query_result = jm.populate_from_jql(
+                            'project = "INT" AND issuetype in ("Sub-task", "Story")')
+                    query_result.expand_issue_flow_logs()
+        """
+        for issue in self._issues:
+            issue.update(issue.flow_log.as_dict())
+
     def filter(self, issue_type_filter: List[str] = None, fields_filter: List[str] = None) -> 'JQLResult':
         """Filter the issues in this JQLResult instance.
 
