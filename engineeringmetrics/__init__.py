@@ -15,3 +15,4 @@ __description__ = 'A package for generating engineering metrics'
 __python_requires__ = '>=3.6'
 
 from .engine import EngineeringMetrics
+from .engine import jirametrics

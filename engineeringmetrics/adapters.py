@@ -340,7 +340,7 @@ class JiraIssue(dict):
         return filtered
 
 
-class JQLResult(object):
+class JQLResult(list):
     """This class wraps the results of a JQL query in order to provide some convenience methods.
 
     Args:
@@ -351,7 +351,7 @@ class JQLResult(object):
 
     """
 
-    def __init__(self, query: str, label: str = 'JQL', issues: List[JiraIssue] = []) -> None:
+    def __init__(self, query: str, label: str = 'JQL', issues: List[JIRA.issue] = []) -> None:
         """Init a JQLResult
 
         Args:
@@ -360,9 +360,9 @@ class JQLResult(object):
                 `JQL` is used and the result overwrites any previous query results.
             issues: A list of :py:class:`JiraIssue` instances.
         """
+        self.extend(list(map(lambda i: JiraIssue(i), issues)))
         self._query = query
         self._label = label
-        self._issues = issues or []
 
     @property
     def query(self) -> str:
@@ -386,7 +386,7 @@ class JQLResult(object):
         List[:py:class:`JiraIssue`]: `issues`
             A list of :py:class:`JiraIssue` instances.
         """
-        return self._issues
+        return self
 
     @property
     def resolved_issues(self) -> List[JiraIssue]:
@@ -397,7 +397,7 @@ class JQLResult(object):
             Currently this is implemented by filtering a list of issues to only contain
             those with a lead time greater that -1.
         """
-        return list(filter(lambda d: d['lead_time'] > -1, self._issues))
+        return list(filter(lambda d: d['lead_time'] > -1, self))
 
     def calculate_lead_times(self, *args, **kwargs) -> None:
         """Calculate the lead times for all issues in this JQLResult instance.
@@ -413,7 +413,7 @@ class JQLResult(object):
             resolution_status (str):
                 The issue status that indicates the issue was resolved
         """
-        for issue in self._issues:
+        for issue in self:
             issue.calculate_lead_time(*args, **kwargs)
 
     def calculate_cycle_times(self, *args, **kwargs) -> None:
@@ -428,7 +428,7 @@ class JQLResult(object):
             resolution_status (str):
                 The issue status that indicates the issue was resolved
         """
-        for issue in self._issues:
+        for issue in self:
             issue.calculate_cycle_time(*args, **kwargs)
 
     def expand_issue_flow_logs(self):
@@ -447,7 +447,7 @@ class JQLResult(object):
                             'project = "INT" AND issuetype in ("Sub-task", "Story")')
                     query_result.expand_issue_flow_logs()
         """
-        for issue in self._issues:
+        for issue in self:
             issue.update(issue.flow_log.as_dict())
 
     def filter(self, issue_type_filter: List[str] = None, fields_filter: List[str] = None) -> 'JQLResult':
@@ -500,14 +500,14 @@ class JiraProject(JQLResult):
 
     """
 
-    def __init__(self, project: JIRA.project, query_string: str = '') -> None:
+    def __init__(self, project: JIRA.project, query_string: str = '', issues: List[JIRA.issue] = []) -> None:
         """Init a JiraProject
 
         Args:
             project (JiraProject): A JIRA project instance
             query_string (srt): The query used to grab this project data.
         """
-        super().__init__(query_string, project.name)
+        super().__init__(query_string, project.name, issues)
         self._key = project.key
         self._name = project.name
 
@@ -539,24 +539,21 @@ class Jira:
             "projects": {}
         }
 
-    def _getJiraIssuesForProjects(self, project_ids: List[str],  max_results: int = False) -> Dict[str, JiraProject]:
+    def _get_issues_for_projects(self, project_ids: List[str],  max_results: int = False) -> Dict[str, JiraProject]:
 
         issues_by_project = {}
         for pid in project_ids:
             pdata = self._client.project(pid)
 
             query_string = 'project = "{}" ORDER BY priority DESC'.format(pid)
-            proj = JiraProject(pdata, query_string)
             issues = self._client.search_issues(
                 query_string,
                 maxResults=max_results,
                 expand='changelog'
             )
-            for issue in issues:
-                kt = JiraIssue(issue)
-                proj.issues.append(kt)
+            proj = JiraProject(pdata, query_string, issues)
 
-            if len(proj.issues):
+            if len(proj):
                 issues_by_project[pid] = proj
 
         return issues_by_project
@@ -576,10 +573,30 @@ class Jira:
         Returns:
             Dict[str, JiraProject]: A dictionary of JiraProjects. Each key will be the id for the corresponding project.
         """
-        projects = self._getJiraIssuesForProjects(projectids,  max_results)
+        projects = self._get_issues_for_projects(projectids,  max_results)
         self._datastore['projects'] = {
             **self._datastore['projects'], **projects}
         return projects
+
+    def get_project_issues(self, projectid: str, max_results: int = False) -> JiraProject:
+        """Get issues for a particular project key.
+
+        Given a project key this method will retuen a list of issues from
+        that project. As well as returning the data to the callee, this method
+        stores the results internally to facilitate the use of a range of helper methods
+        to analyse the data.
+
+        Args:
+            projectid: A project id for which you want to pull issues.
+            max_results: Limit the number of issues returned by the query.
+
+        Returns:
+            JiraProject: A list of JiraIssue instances.
+        """
+        project = self._get_issues_for_projects(
+            [projectid],  max_results)[projectid]
+        self._datastore[projectid] = project
+        return project
 
     def populate_from_jql(self, query: str = None, max_results: int = False, label: str = "JQL") -> JQLResult:
         """Populate the Jira instance with data from the Jira app accorging to a JQL
@@ -607,8 +624,7 @@ class Jira:
 
         result = self._client.search_issues(
             query, maxResults=max_results, expand='changelog')
-        issues = list(map(lambda i: JiraIssue(i), result))
-        query_result = JQLResult(query, label, issues)
+        query_result = JQLResult(query, label, result)
         self._datastore[query_result.label] = query_result
         return query_result
 
