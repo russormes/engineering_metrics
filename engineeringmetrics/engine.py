@@ -4,6 +4,7 @@
 
 from engineeringmetrics import adapters
 from operator import itemgetter
+from pathlib import Path
 from typing import Dict, Mapping
 
 CONFIG_KEYS = ['jira_api_token', 'jira_username',
@@ -85,3 +86,28 @@ class EngineeringMetrics:
             is populated with an instance of the Jira adapter for pulling data from Jira.
         """
         return self._data_adapters['jira']
+
+
+def jirametrics(config: Dict[str, str] = None) -> adapters.Jira:
+    """Factory function for returning instances of the jira adapter
+
+    Args:
+        config: A dictionary of config parameters.
+
+            ``"jira_oauth_config_path"``
+                Path to the jira oauth config and keys (str)
+            ``"jira_api_token"``
+                A valid access token for Jira cloud (str)
+            ``"jira_username"``
+                The username for jira cloud instance (str)
+            ``"jira_server_url"``
+                The url of your jira cloud instance (str)
+
+    Returns:
+        adapters.Jira: An instance of :py:class:`adapters.Jira`
+
+    """
+    config_dict = {
+        'jira_oauth_config_path': Path.home()
+    }
+    return EngineeringMetrics(config_dict).jirametrics
