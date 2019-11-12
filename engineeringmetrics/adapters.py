@@ -578,6 +578,26 @@ class Jira:
             **self._datastore['projects'], **projects}
         return projects
 
+    def get_project_issues(self, projectid: str, max_results: int = False) -> JiraProject:
+        """Get issues for a particular project key.
+
+        Given a project key this method will retuen a list of issues from
+        that project. As well as returning the data to the callee, this method
+        stores the results internally to facilitate the use of a range of helper methods
+        to analyse the data.
+
+        Args:
+            projectid: A project id for which you want to pull issues.
+            max_results: Limit the number of issues returned by the query.
+
+        Returns:
+            JiraProject: A list of JiraIssue instances.
+        """
+        project = self._get_issues_for_projects(
+            [projectid],  max_results)[projectid]
+        self._datastore[projectid] = project
+        return project
+
     def populate_from_jql(self, query: str = None, max_results: int = False, label: str = "JQL") -> JQLResult:
         """Populate the Jira instance with data from the Jira app accorging to a JQL
         string.
