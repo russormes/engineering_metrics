@@ -156,7 +156,8 @@ class JiraIssue(dict):
         self._issue = issue
 
         self['assignee'] = issue.fields.assignee
-        self['created'] = parse(issue.fields.created)
+        self._created = parse(issue.fields.created)
+        self['created'] = self._created
         self['description'] = issue.fields.description
         self['fixVersion'] = None
         if len(issue.fields.fixVersions) > 0:
@@ -165,9 +166,11 @@ class JiraIssue(dict):
         self['key'] = issue.key
         self['labels'] = issue.fields.labels
         self['priority'] = issue.fields.priority.__str__().split(':')[0]
-        self['resolution'] = issue.fields.resolution
-        self['resolutiondate'] = parse(
+        self._resolution = issue.fields.resolution
+        self['resolution'] = self._resolution
+        self._resolutiondate = parse(
             issue.fields.resolutiondate) if issue.fields.resolutiondate else ''
+        self['resolutiondate'] = self._resolutiondate
         self['status'] = issue.fields.status
         self['summary'] = issue.fields.summary
         self['url'] = issue.permalink()
@@ -253,7 +256,7 @@ class JiraIssue(dict):
         """
         self['lead_time'] = -1
 
-        if self['resolutiondate'] and not override:
+        if self._resolutiondate and not override:
             self['lead_time'] = busday_duration(
                 self['created'], self['resolutiondate'])
         else:
@@ -263,7 +266,7 @@ class JiraIssue(dict):
                     resolution_date = log['entered_at']
             if resolution_date != None:
                 self['lead_time'] = busday_duration(
-                    self['created'], resolution_date)
+                    self._created, resolution_date)
 
         return self['lead_time']
 
@@ -294,11 +297,11 @@ class JiraIssue(dict):
             if log['state'] == begin_status:
                 start_date = log['entered_at']
         if start_date == None:
-            start_date = self['created']
+            start_date = self._created
 
-        if self['resolutiondate']:
+        if self._resolutiondate:
             self['cycle_time'] = busday_duration(
-                start_date, self['resolutiondate'])
+                start_date, self._resolutiondate)
         else:
             resolution_date = None
             for log in self._flow_log:
@@ -334,6 +337,13 @@ class JiraIssue(dict):
             to_delete = set(filtered.keys()).difference(fields_filter)
             for d in to_delete:
                 del filtered[d]
+
+        if 'lead_time' in fields_filter:
+            filtered['lead_time'] = self.get(
+                'lead_time', self.calculate_lead_time())
+        if 'cycle_time' in fields_filter:
+            filtered['cycle_time'] = self.get(
+                'cycle_time', self.calculate_cycle_time())
         # We have to copy parent from a property into the map if it is a requested field
         if 'parent' in fields_filter:
             filtered['parent'] = filtered.parent
@@ -403,7 +413,7 @@ class JQLResult(list):
         """Calculate the lead times for all issues in this JQLResult instance.
 
         This method allows us to fix some issues that might be missing resolution data.
-        We can pass an issue status that can be used to infer a resolution date if this is 
+        We can pass an issue status that can be used to infer a resolution date if this is
         missing from an issue we intend as resloved.
 
         The date an issue entered the resolution status is only used if the resolution date is
