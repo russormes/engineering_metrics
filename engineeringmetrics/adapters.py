@@ -258,7 +258,7 @@ class JiraIssue(dict):
 
         if self._resolutiondate and not override:
             self['lead_time'] = busday_duration(
-                self['created'], self['resolutiondate'])
+                self._created, self._resolutiondate)
         else:
             resolution_date = None
             for log in self._flow_log:
@@ -361,7 +361,7 @@ class JQLResult(list):
 
     """
 
-    def __init__(self, query: str, label: str = 'JQL', issues: List[JIRA.issue] = []) -> None:
+    def __init__(self, query: str, label: str = 'JQL', issues: List[JIRA.issue] = [], jm_issues: List[JiraIssue] = None) -> None:
         """Init a JQLResult
 
         Args:
@@ -370,7 +370,10 @@ class JQLResult(list):
                 `JQL` is used and the result overwrites any previous query results.
             issues: A list of :py:class:`JiraIssue` instances.
         """
-        self.extend(list(map(lambda i: JiraIssue(i), issues)))
+        if jm_issues:
+            self.extend(jm_issues)
+        else:
+            self.extend(list(map(lambda i: JiraIssue(i), issues)))
         self._query = query
         self._label = label
 
@@ -407,7 +410,7 @@ class JQLResult(list):
             Currently this is implemented by filtering a list of issues to only contain
             those with a lead time greater that -1.
         """
-        return list(filter(lambda d: d['lead_time'] > -1, self))
+        return list(filter(lambda d: d.get('lead_time', -1) > -1, self))
 
     def calculate_lead_times(self, *args, **kwargs) -> None:
         """Calculate the lead times for all issues in this JQLResult instance.
@@ -501,7 +504,7 @@ class JQLResult(list):
         if type(fields_filter) is list:
             filtered_issues = list(map(lambda ffi: ffi.flitered_copy(
                 fields_filter), filtered_issues))
-        return JQLResult(self.query, filtered_label, filtered_issues)
+        return JQLResult(self.query, filtered_label, jm_issues=filtered_issues)
 
 
 class JiraProject(JQLResult):
