@@ -3,6 +3,19 @@ A python lib to pull out some engineering metrics from various data sources such
 
 ## Getting Started
 
+There are two ways to install this module for use in your data investigations. Clone the repo and install it locally (which gives you access to the docs too) or install it via pip from github.
+
+```sh
+# Local install (recommended so you can build the docs locally)
+# Over ssh
+git clone git@github.com:karhoo/engineering_metrics.git
+cd engineering_metrics/
+python setup.py install
+
+# pip install from github
+pip install git+ssh://git@github.com/karhoo/engineering_metrics.git#egg=engineeringmetrics
+```
+
 ### Docs
 
 I don't currently have a solution for hosting the doc pages. Instead you will need to view them locally. To do this, clone the repo, build the docs and view in your favorite browser (or one you don't like but have installed).
