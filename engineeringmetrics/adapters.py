@@ -443,7 +443,7 @@ class JQLResult(list):
         for issue in self:
             issue.calculate_cycle_time(*args, **kwargs)
 
-    def expand_issue_flow_logs(self):
+    def expand_issue_flow_logs(self, statuses: List[str] = None):
         """Add all flow log statuses as properties on the items with the duration of that status as the value.
         This method alters the issues set of the current JQLResult in place. To undo would require using the filter
         method to select just the properties of interest.
@@ -460,7 +460,12 @@ class JQLResult(list):
                     query_result.expand_issue_flow_logs()
         """
         for issue in self:
-            issue.update(issue.flow_log.as_dict())
+            status_dict = issue.flow_log.as_dict()
+            if type(statuses) is list:
+                to_delete = set(status_dict.keys()).difference(statuses)
+                for d in to_delete:
+                    del status_dict[d]
+            issue.update(status_dict)
 
     def filter(self, issue_type_filter: List[str] = None, fields_filter: List[str] = None) -> 'JQLResult':
         """Filter the issues in this JQLResult instance.
