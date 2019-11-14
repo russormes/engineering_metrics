@@ -314,7 +314,7 @@ class JiraIssue(dict):
 
     __PROTECTED_FIELDS__ = ['key', 'ttype']
 
-    def flitered_copy(self, fields_filter: List[str]) -> 'JiraIssue':
+    def filtered_copy(self, fields_filter: List[str]) -> 'JiraIssue':
         """Return a copy of this JiraIssue instance with only the set of fields defined in the fields_filter list.
 
         id and ttype are protected fields and cannot be removed by this method.
@@ -493,16 +493,20 @@ class JQLResult(list):
         """
 
         # Make a copy of the issues from this query to not return references to the exitsing ones.
-        filtered_issues = list(map(lambda i: JiraIssue(i._issue), self.issues))
+        filtered_issues = list(map(lambda i: JiraIssue(i._issue), self))
         filtered_label = self.label + '_filtered'
 
         if type(issue_type_filter) is list:
             filtered_issues = list(
                 filter(lambda fi: fi['ttype'] in issue_type_filter, filtered_issues))
 
-        if type(fields_filter) is list:
-            filtered_issues = list(map(lambda ffi: ffi.flitered_copy(
-                fields_filter), filtered_issues))
+        ff = []
+        if not fields_filter and len(self):
+            ff.extend(self[0].keys())
+        else:
+            ff = fields_filter
+        filtered_issues = list(
+            map(lambda ffi: ffi.filtered_copy(ff), filtered_issues))
         return JQLResult(self.query, filtered_label, filtered_issues)
 
 
