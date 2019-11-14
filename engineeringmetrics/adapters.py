@@ -4,13 +4,12 @@
 pulling engineering metrics.
 """
 from dateutil.parser import parse
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 import numpy as np
 from typing import List, Dict
 
 from configparser import ConfigParser
-from jira import JIRA
+from jira import JIRA, client
 import os
 
 
@@ -361,7 +360,7 @@ class JQLResult(list):
 
     """
 
-    def __init__(self, query: str, label: str = 'JQL', issues: List[JIRA.issue] = [], jm_issues: List[JiraIssue] = None) -> None:
+    def __init__(self, query: str, label: str = 'JQL', issues: List[JIRA.issue] = []) -> None:
         """Init a JQLResult
 
         Args:
@@ -370,10 +369,10 @@ class JQLResult(list):
                 `JQL` is used and the result overwrites any previous query results.
             issues: A list of :py:class:`JiraIssue` instances.
         """
-        if jm_issues:
-            self.extend(jm_issues)
-        else:
+        if type(issues) is client.ResultList:
             self.extend(list(map(lambda i: JiraIssue(i), issues)))
+        else:
+            self.extend(issues)
         self._query = query
         self._label = label
 
@@ -410,7 +409,7 @@ class JQLResult(list):
             Currently this is implemented by filtering a list of issues to only contain
             those with a lead time greater that -1.
         """
-        return list(filter(lambda d: d.get('lead_time', -1) > -1, self))
+        return list(filter(lambda d: d._resolution or d.get('lead_time', -1) > -1, self))
 
     def calculate_lead_times(self, *args, **kwargs) -> None:
         """Calculate the lead times for all issues in this JQLResult instance.
@@ -504,7 +503,7 @@ class JQLResult(list):
         if type(fields_filter) is list:
             filtered_issues = list(map(lambda ffi: ffi.flitered_copy(
                 fields_filter), filtered_issues))
-        return JQLResult(self.query, filtered_label, jm_issues=filtered_issues)
+        return JQLResult(self.query, filtered_label, filtered_issues)
 
 
 class JiraProject(JQLResult):
@@ -607,7 +606,7 @@ class Jira:
             JiraProject: A list of JiraIssue instances.
         """
         project = self._get_issues_for_projects(
-            [projectid],  max_results)[projectid]
+            [projectid],  max_results).get(projectid, JQLResult(projectid, projectid))
         self._datastore[projectid] = project
         return project
 
