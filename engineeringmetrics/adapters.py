@@ -175,6 +175,9 @@ class JiraIssue(dict):
         self['url'] = issue.permalink()
         self['updated_at'] = parse(issue.fields.updated)
 
+        self['issuelinks'] = []
+        for link in issue.fields.issuelinks:
+            self['issuelinks'].append(link.inwardIssue.key)
         parent = getattr(issue.fields, 'parent', None)
         self._parent = parent.key if parent else parent
 
