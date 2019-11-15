@@ -298,17 +298,16 @@ class JiraIssue(dict):
         if start_date == None:
             start_date = self._created
 
+        resolution_date = None
         if self._resolutiondate:
-            self['cycle_time'] = busday_duration(
-                start_date, self._resolutiondate)
+            resolution_date = self._resolutiondate
         else:
-            resolution_date = None
             for log in self._flow_log:
                 if log['state'] == resolution_status:
                     resolution_date = log['entered_at']
-            if resolution_date != None:
-                self['cycle_time'] = busday_duration(
-                    start_date, resolution_date)
+
+        if resolution_date != None:
+            self['cycle_time'] = busday_duration(start_date, resolution_date)
 
         return self['cycle_time']
 
