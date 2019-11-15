@@ -38,7 +38,7 @@ class EngineeringMetrics:
 
     """
 
-    def __init__(self, config: Dict[str, str]) -> None:
+    def __init__(self, config: Dict[str, str] = None) -> None:
         """Init a EngineeringMetrics.
 
         Args:
@@ -49,6 +49,9 @@ class EngineeringMetrics:
                 ``"jira_access_token"``
                     A valid access token for Jira cloud (str)
         """
+        if not config:
+            config = {'jira_oauth_config_path': Path.home()}
+
         self._config: Dict[str, str] = self.___set_config___(config)
         # A structure to store data source adapters for pulling in data to the metrics engine.
         self._data_adapters: Dict[str,
