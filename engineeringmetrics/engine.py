@@ -110,7 +110,9 @@ def jirametrics(config: Dict[str, str] = None) -> adapters.Jira:
         adapters.Jira: An instance of :py:class:`adapters.Jira`
 
     """
-    config_dict = {
-        'jira_oauth_config_path': Path.home()
-    }
+    if not config:
+        config_dict = {
+            'jira_oauth_config_path': Path.home()
+        }
+
     return EngineeringMetrics(config_dict).jirametrics
