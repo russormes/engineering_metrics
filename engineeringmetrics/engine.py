@@ -38,7 +38,7 @@ class EngineeringMetrics:
 
     """
 
-    def __init__(self, config: Dict[str, str] = None) -> None:
+    def __init__(self, config: Dict[str, str]) -> None:
         """Init a EngineeringMetrics.
 
         Args:
@@ -49,9 +49,6 @@ class EngineeringMetrics:
                 ``"jira_access_token"``
                     A valid access token for Jira cloud (str)
         """
-        if not config:
-            config = {'jira_oauth_config_path': Path.home()}
-
         self._config: Dict[str, str] = self.___set_config___(config)
         # A structure to store data source adapters for pulling in data to the metrics engine.
         self._data_adapters: Dict[str,
@@ -71,10 +68,12 @@ class EngineeringMetrics:
             'jira_api_token', 'jira_username', 'jira_server_url', 'jira_oauth_config_path')(config)
 
         if jira_api_token and jira_username and jira_server_url:
+            print('Using JIRA Cloud')
             jira_adapter = adapters.init_jira_adapter(
                 jira_api_token=jira_api_token, jira_username=jira_username, jira_server_url=jira_server_url)
             data_adapters['jira'] = jira_adapter
         elif jira_oauth_config_path != None:
+            print('Using JIRA hosted OAuth')
             jira_adapter = adapters.init_jira_adapter(
                 jira_oauth_config_path=jira_oauth_config_path)
             data_adapters['jira'] = jira_adapter

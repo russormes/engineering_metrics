@@ -175,7 +175,8 @@ class JiraIssue(dict):
 
         self['issuelinks'] = []
         for link in issue.fields.issuelinks:
-            self['issuelinks'].append(link.inwardIssue.key)
+            if link and hasattr(link, "inwardIssue"):
+                self['issuelinks'].append(link.inwardIssue.key)
         parent = getattr(issue.fields, 'parent', None)
         self._parent = parent.key if parent else parent
 
