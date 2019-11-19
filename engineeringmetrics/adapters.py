@@ -4,13 +4,12 @@
 pulling engineering metrics.
 """
 from dateutil.parser import parse
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 import numpy as np
 from typing import List, Dict
 
 from configparser import ConfigParser
-from jira import JIRA
+from jira import JIRA, client
 import os
 
 
@@ -156,7 +155,8 @@ class JiraIssue(dict):
         self._issue = issue
 
         self['assignee'] = issue.fields.assignee
-        self['created'] = parse(issue.fields.created)
+        self._created = parse(issue.fields.created)
+        self['created'] = self._created
         self['description'] = issue.fields.description
         self['fixVersion'] = None
         if len(issue.fields.fixVersions) > 0:
@@ -165,9 +165,11 @@ class JiraIssue(dict):
         self['key'] = issue.key
         self['labels'] = issue.fields.labels
         self['priority'] = issue.fields.priority.__str__().split(':')[0]
-        self['resolution'] = issue.fields.resolution
-        self['resolutiondate'] = parse(
+        self._resolution = issue.fields.resolution
+        self['resolution'] = self._resolution
+        self._resolutiondate = parse(
             issue.fields.resolutiondate) if issue.fields.resolutiondate else ''
+        self['resolutiondate'] = self._resolutiondate
         self['status'] = issue.fields.status
         self['summary'] = issue.fields.summary
         self['url'] = issue.permalink()
@@ -175,7 +177,7 @@ class JiraIssue(dict):
 
         self['issuelinks'] = []
         for link in issue.fields.issuelinks:
-            if link and hasattr(link, "inwardIssue"):
+            if getattr(link, 'inwardIssue', None):
                 self['issuelinks'].append(link.inwardIssue.key)
         parent = getattr(issue.fields, 'parent', None)
         self._parent = parent.key if parent else parent
@@ -257,9 +259,9 @@ class JiraIssue(dict):
         """
         self['lead_time'] = -1
 
-        if self['resolutiondate'] and not override:
+        if self._resolutiondate and not override:
             self['lead_time'] = busday_duration(
-                self['created'], self['resolutiondate'])
+                self._created, self._resolutiondate)
         else:
             resolution_date = None
             for log in self._flow_log:
@@ -267,7 +269,7 @@ class JiraIssue(dict):
                     resolution_date = log['entered_at']
             if resolution_date != None:
                 self['lead_time'] = busday_duration(
-                    self['created'], resolution_date)
+                    self._created, resolution_date)
 
         return self['lead_time']
 
@@ -298,25 +300,24 @@ class JiraIssue(dict):
             if log['state'] == begin_status:
                 start_date = log['entered_at']
         if start_date == None:
-            start_date = self['created']
+            start_date = self._created
 
-        if self['resolutiondate']:
-            self['cycle_time'] = busday_duration(
-                start_date, self['resolutiondate'])
+        resolution_date = None
+        if self._resolutiondate:
+            resolution_date = self._resolutiondate
         else:
-            resolution_date = None
             for log in self._flow_log:
                 if log['state'] == resolution_status:
                     resolution_date = log['entered_at']
-            if resolution_date != None:
-                self['cycle_time'] = busday_duration(
-                    start_date, resolution_date)
+
+        if resolution_date != None:
+            self['cycle_time'] = busday_duration(start_date, resolution_date)
 
         return self['cycle_time']
 
     __PROTECTED_FIELDS__ = ['key', 'ttype']
 
-    def flitered_copy(self, fields_filter: List[str]) -> 'JiraIssue':
+    def filtered_copy(self, fields_filter: List[str]) -> 'JiraIssue':
         """Return a copy of this JiraIssue instance with only the set of fields defined in the fields_filter list.
 
         id and ttype are protected fields and cannot be removed by this method.
@@ -338,6 +339,13 @@ class JiraIssue(dict):
             to_delete = set(filtered.keys()).difference(fields_filter)
             for d in to_delete:
                 del filtered[d]
+
+        if 'lead_time' in fields_filter:
+            filtered['lead_time'] = self.get(
+                'lead_time', self.calculate_lead_time())
+        if 'cycle_time' in fields_filter:
+            filtered['cycle_time'] = self.get(
+                'cycle_time', self.calculate_cycle_time())
         # We have to copy parent from a property into the map if it is a requested field
         if 'parent' in fields_filter:
             filtered['parent'] = filtered.parent
@@ -364,7 +372,10 @@ class JQLResult(list):
                 `JQL` is used and the result overwrites any previous query results.
             issues: A list of :py:class:`JiraIssue` instances.
         """
-        self.extend(list(map(lambda i: JiraIssue(i), issues)))
+        if type(issues) is client.ResultList:
+            self.extend(list(map(lambda i: JiraIssue(i), issues)))
+        else:
+            self.extend(issues)
         self._query = query
         self._label = label
 
@@ -401,13 +412,13 @@ class JQLResult(list):
             Currently this is implemented by filtering a list of issues to only contain
             those with a lead time greater that -1.
         """
-        return list(filter(lambda d: d['lead_time'] > -1, self))
+        return list(filter(lambda d: d._resolution or d.get('lead_time', -1) > -1, self))
 
     def calculate_lead_times(self, *args, **kwargs) -> None:
         """Calculate the lead times for all issues in this JQLResult instance.
 
         This method allows us to fix some issues that might be missing resolution data.
-        We can pass an issue status that can be used to infer a resolution date if this is 
+        We can pass an issue status that can be used to infer a resolution date if this is
         missing from an issue we intend as resloved.
 
         The date an issue entered the resolution status is only used if the resolution date is
@@ -435,7 +446,7 @@ class JQLResult(list):
         for issue in self:
             issue.calculate_cycle_time(*args, **kwargs)
 
-    def expand_issue_flow_logs(self):
+    def expand_issue_flow_logs(self, statuses: List[str] = None):
         """Add all flow log statuses as properties on the items with the duration of that status as the value.
         This method alters the issues set of the current JQLResult in place. To undo would require using the filter
         method to select just the properties of interest.
@@ -452,7 +463,12 @@ class JQLResult(list):
                     query_result.expand_issue_flow_logs()
         """
         for issue in self:
-            issue.update(issue.flow_log.as_dict())
+            status_dict = issue.flow_log.as_dict()
+            if type(statuses) is list:
+                to_delete = set(status_dict.keys()).difference(statuses)
+                for d in to_delete:
+                    del status_dict[d]
+            issue.update(status_dict)
 
     def filter(self, issue_type_filter: List[str] = None, fields_filter: List[str] = None) -> 'JQLResult':
         """Filter the issues in this JQLResult instance.
@@ -485,16 +501,20 @@ class JQLResult(list):
         """
 
         # Make a copy of the issues from this query to not return references to the exitsing ones.
-        filtered_issues = list(map(lambda i: JiraIssue(i._issue), self.issues))
+        filtered_issues = list(map(lambda i: JiraIssue(i._issue), self))
         filtered_label = self.label + '_filtered'
 
         if type(issue_type_filter) is list:
             filtered_issues = list(
                 filter(lambda fi: fi['ttype'] in issue_type_filter, filtered_issues))
 
-        if type(fields_filter) is list:
-            filtered_issues = list(map(lambda ffi: ffi.flitered_copy(
-                fields_filter), filtered_issues))
+        ff = []
+        if not fields_filter and len(self):
+            ff.extend(self[0].keys())
+        else:
+            ff = fields_filter
+        filtered_issues = list(
+            map(lambda ffi: ffi.filtered_copy(ff), filtered_issues))
         return JQLResult(self.query, filtered_label, filtered_issues)
 
 
@@ -598,7 +618,7 @@ class Jira:
             JiraProject: A list of JiraIssue instances.
         """
         project = self._get_issues_for_projects(
-            [projectid],  max_results)[projectid]
+            [projectid],  max_results).get(projectid, JQLResult(projectid, projectid))
         self._datastore[projectid] = project
         return project
 
