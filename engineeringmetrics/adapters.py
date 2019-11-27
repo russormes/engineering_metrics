@@ -158,6 +158,7 @@ class JiraIssue(dict):
         self._created = parse(issue.fields.created)
         self['created'] = self._created
         self['description'] = issue.fields.description
+        self['epiclink'] = issue.fields.customfield_10001
         self['fixVersion'] = None
         if len(issue.fields.fixVersions) > 0:
             self["fixVersion"] = issue.fields.fixVersions[0]
