@@ -158,7 +158,6 @@ class JiraIssue(dict):
         self._created = parse(issue.fields.created)
         self['created'] = self._created
         self['description'] = issue.fields.description
-        self['epiclink'] = issue.fields.customfield_10001
         self['fixVersion'] = None
         if len(issue.fields.fixVersions) > 0:
             self["fixVersion"] = issue.fields.fixVersions[0]
@@ -175,6 +174,18 @@ class JiraIssue(dict):
         self['summary'] = issue.fields.summary
         self['url'] = issue.permalink()
         self['updated_at'] = parse(issue.fields.updated)
+
+        # The following allows you to debug individual fields per
+        # https://stackoverflow.com/questions/30615846/python-and-jira-get-fields-from-specific-issue
+        #for field_name in issue.raw['fields']:
+        #    print("Field:", field_name, "Value:", issue.raw['fields'][field_name])
+        #print("============================================================")
+        # 10001 is old JIRA.  New JIRA has a whole new parent thing going on
+        if getattr(issue.fields, 'parent', None):
+            self['epiclink'] = issue.fields.parent.key
+            self['epicName'] = issue.fields.parent.fields.summary
+        else:
+            self['epiclink'] = issue.fields.customfield_10001
 
         self['issuelinks'] = []
         for link in issue.fields.issuelinks:
