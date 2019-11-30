@@ -163,6 +163,8 @@ class JiraIssue(dict):
             self["fixVersion"] = issue.fields.fixVersions[0]
         self['id'] = issue.id
         self['key'] = issue.key
+        self['project'] = issue.fields.project.key
+        self['projectName'] = issue.fields.project.name
         self['labels'] = issue.fields.labels
         self['priority'] = issue.fields.priority.__str__().split(':')[0]
         self._resolution = issue.fields.resolution
