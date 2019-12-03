@@ -179,9 +179,9 @@ class JiraIssue(dict):
 
         # The following allows you to debug individual fields per
         # https://stackoverflow.com/questions/30615846/python-and-jira-get-fields-from-specific-issue
-        #for field_name in issue.raw['fields']:
+        # for field_name in issue.raw['fields']:
         #    print("Field:", field_name, "Value:", issue.raw['fields'][field_name])
-        #print("============================================================")
+        # print("============================================================")
         # 10001 is old JIRA.  New JIRA has a whole new parent thing going on
         if getattr(issue.fields, 'parent', None):
             self['epiclink'] = issue.fields.parent.key
@@ -287,7 +287,7 @@ class JiraIssue(dict):
 
         return self['lead_time']
 
-    def calculate_cycle_time(self, begin_status: str = 'In Progress', resolution_status: str = 'Done') -> int:
+    def calculate_cycle_time(self, begin_status: str = 'In Progress', resolution_status: str = 'Done', override: bool = False) -> int:
         """Counts the number of business days an issue took to resolve once work had begun. As a
         issue is often created before work is stared this method uses the data a issue entered a
         particular state to indicate the start of work. IT assumes a state called "In Progress" if nothing
@@ -319,7 +319,7 @@ class JiraIssue(dict):
         resolution_date = None
         if self._resolutiondate:
             resolution_date = self._resolutiondate
-        else:
+        elif override:
             for log in self._flow_log:
                 if log['state'] == resolution_status:
                     resolution_date = log['entered_at']
@@ -445,7 +445,7 @@ class JQLResult(list):
         for issue in self:
             issue.calculate_lead_time(*args, **kwargs)
 
-    def calculate_cycle_times(self, *args, **kwargs) -> None:
+    def calculate_cycle_times(self, override: bool = True, *args, **kwargs) -> None:
         """Calculate the cycle times for all issues in this JQLResult instance.
 
         This method allows us to pass issue statuses to mark begining and end of work when
@@ -458,7 +458,7 @@ class JQLResult(list):
                 The issue status that indicates the issue was resolved
         """
         for issue in self:
-            issue.calculate_cycle_time(*args, **kwargs)
+            issue.calculate_cycle_time(override=override, *args, **kwargs)
 
     def expand_issue_flow_logs(self, statuses: List[str] = None):
         """Add all flow log statuses as properties on the items with the duration of that status as the value.
