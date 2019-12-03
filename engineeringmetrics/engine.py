@@ -115,4 +115,6 @@ def jirametrics(config: Dict[str, str] = None) -> adapters.Jira:
             'jira_oauth_config_path': Path.home()
         }
 
-    return EngineeringMetrics(config_dict).jirametrics
+        return EngineeringMetrics(config_dict).jirametrics
+
+    return EngineeringMetrics(config).jirametrics

@@ -205,7 +205,7 @@ class JiraIssue(dict):
         )
         try:
             previous_item = None
-            for history in issue.changelog.histories:
+            for history in reversed(issue.changelog.histories):
                 for item in history.items:
                     if item.field == 'status':
                         new_log_item = dict(
