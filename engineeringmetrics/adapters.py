@@ -155,6 +155,9 @@ class JiraIssue(dict):
         self._issue = issue
 
         self['assignee'] = issue.fields.assignee
+        self._comments = issue.fields.comment.comments
+        if len(self._comments) > 0:
+            self['lastComment'] = self._comments[0].body
         self._created = parse(issue.fields.created)
         self['created'] = self._created
         self['description'] = issue.fields.description
@@ -616,6 +619,28 @@ class Jira:
             **self._datastore['projects'], **projects}
         return projects
 
+    # In order to retrieve the comments field we have to explicitly ask for it.
+    # This means we have to explicitly ask for ALL fileds we are intereseted in. If
+    # we are interested in a field that is not listed we have to add it.
+    __ISSUES_FIELDS__ = [
+        'assignee',
+        'comment',
+        'created',
+        'description',
+        'fixVersions',
+        'project',
+        'labels',
+        'priority',
+        'resolution',
+        'resolutiondate',
+        'status',
+        'summary',
+        'parent',
+        'customfield_10001',
+        'issuelinks',
+        'updated'
+    ]
+
     def get_project_issues(self, projectid: str, max_results: int = False) -> JiraProject:
         """Get issues for a particular project key.
 
@@ -661,7 +686,7 @@ class Jira:
             raise ValueError("query string is required to get issues")
 
         result = self._client.search_issues(
-            query, maxResults=max_results, expand='changelog')
+            query, maxResults=max_results, expand='changelog', fields=self.__ISSUES_FIELDS__)
         query_result = JQLResult(query, label, result)
         self._datastore[query_result.label] = query_result
         return query_result
