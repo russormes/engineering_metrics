@@ -140,6 +140,20 @@ class FlowLog(list):
 
 class JiraIssue(dict):
     """Representation of issues from Jira.
+
+    Attributes:
+        assignee (Dict):
+            Dict of properties parsed out of the JSON response from the server
+        flow_log (:py:class:`FlowLog`):
+            A list of dicts with the following keys:
+
+            ``"entered_at"``
+                When the issue entered the state (datetime)
+            ``"state"``
+                The name of the state the issue entered (string)
+            ``"duration"``
+                Time spent in this state (int)
+        parent (str): If the issue is a sub-types this attribute records the parent issue id.
     """
 
     def __init__(self, issue: JIRA.issue) -> None:
@@ -154,31 +168,62 @@ class JiraIssue(dict):
             self['ttype'] = "Ticket"
         self._issue = issue
 
-        self['assignee'] = issue.fields.assignee
-        self._comments = issue.fields.comment.comments
-        if len(self._comments) > 0:
-            self['lastComment'] = self._comments[0].body
-        self._created = parse(issue.fields.created)
-        self['created'] = self._created
-        self['description'] = issue.fields.description
-        self['fixVersion'] = None
+        if issue.fields.assignee:
+            self.assignee = issue.fields.assignee.raw
+            self['assigneeName'] = self.assignee['displayName']
+            self['assigneeEmail'] = self.assignee['emailAddress']
+
+        self.comments = list(
+            map(lambda c: c.raw, issue.fields.comment.comments))
+        if len(self.comments) > 0:
+            self['lastComment'] = self.comments[0]['body']
+
+        self.created = parse(issue.fields.created)
+        self['created'] = self.created
+
+        self.description = issue.fields.description
+        self['description'] = self.description
+
+        self.fix_version = None
         if len(issue.fields.fixVersions) > 0:
-            self["fixVersion"] = issue.fields.fixVersions[0]
-        self['id'] = issue.id
-        self['key'] = issue.key
-        self['project'] = issue.fields.project.key
-        self['projectName'] = issue.fields.project.name
-        self['labels'] = issue.fields.labels
-        self['priority'] = issue.fields.priority.__str__().split(':')[0]
-        self._resolution = issue.fields.resolution
-        self['resolution'] = self._resolution
-        self._resolutiondate = parse(
+            self.fix_version = issue.fields.fixVersions[0]
+        self['fixVersion'] = self.fix_version
+
+        self.id = issue.id
+        self['id'] = self.id
+
+        self.key = issue.key
+        self['key'] = self.key
+
+        self.project = issue.fields.project.key
+        self['project'] = self.project
+
+        self.project_name = issue.fields.project.name
+        self['projectName'] = self.project_name
+
+        self.labels = issue.fields.labels
+        self['labels'] = self.labels
+
+        self.priority = issue.fields.priority.name
+        self['priority'] = self.priority
+
+        self.resolution = issue.fields.resolution
+        self['resolution'] = self.resolution
+        self.resolution_date = parse(
             issue.fields.resolutiondate) if issue.fields.resolutiondate else ''
-        self['resolutiondate'] = self._resolutiondate
-        self['status'] = issue.fields.status
-        self['summary'] = issue.fields.summary
-        self['url'] = issue.permalink()
-        self['updated_at'] = parse(issue.fields.updated)
+        self['resolutionDate'] = self.resolution_date
+
+        self.status = issue.fields.status.raw
+        self['status'] = self.status
+
+        self.summary = issue.fields.summary
+        self['summary'] = self.summary
+
+        self.url = issue.permalink()
+        self['url'] = self.url
+
+        self.updated_at = parse(issue.fields.updated)
+        self['updatedAt'] = self.updated_at
 
         # The following allows you to debug individual fields per
         # https://stackoverflow.com/questions/30615846/python-and-jira-get-fields-from-specific-issue
@@ -192,15 +237,17 @@ class JiraIssue(dict):
         else:
             self['epiclink'] = issue.fields.customfield_10001
 
-        self['issuelinks'] = []
+        self.issue_links = []
         for link in issue.fields.issuelinks:
             if getattr(link, 'inwardIssue', None):
-                self['issuelinks'].append(link.inwardIssue.key)
-        parent = getattr(issue.fields, 'parent', None)
-        self._parent = parent.key if parent else parent
+                self.issue_links.append(link.inwardIssue.key)
+        self['issueLinks'] = self.issue_links
 
-        self._flow_log = FlowLog()
-        self._flow_log.append(
+        parent = getattr(issue.fields, 'parent', None)
+        self.parent = parent.key if parent else parent
+
+        self.flow_log = FlowLog()
+        self.flow_log.append(
             dict(
                 entered_at=self['created'],
                 state=str("Created")
@@ -219,44 +266,21 @@ class JiraIssue(dict):
                             previous_item['duration'] = busday_duration(  # pylint: disable=unsupported-assignment-operation
                                 previous_item['entered_at'], new_log_item['entered_at'])  # pylint: disable=unsupported-assignment-operation, unsubscriptable-object
                         previous_item = new_log_item
-                        self._flow_log.append(new_log_item)
+                        self.flow_log.append(new_log_item)
             if previous_item != None:
                 previous_item['duration'] = busday_duration(
                     previous_item['entered_at'], datetime.now(previous_item['entered_at'].tzinfo))
         except AttributeError:
             pass
 
-        self['lead_time'] = None
+        self['leadTime'] = None
         self.calculate_lead_time()
-        # We do this after the flow log is built as cycle_time uses data from that log.
-        self['cycle_time'] = None
+        self.lead_time = self['leadTime']
+
+        # We do this after the flow log is built as cycleTime uses data from that log.
+        self['cycleTime'] = None
         self.calculate_cycle_time()
-
-    @property
-    def flow_log(self) -> FlowLog:
-        """
-        :py:class:`FlowLog`: `flow_log`
-            A list of dicts with the following keys:
-
-            ``"entered_at"``
-                When the issue entered the state (datetime)
-            ``"state"``
-                The name of the state the issue entered (string)
-            ``"duration"``
-                Time spent in this state (int)
-
-        """
-        return self._flow_log
-
-    @property
-    def parent(self) -> str:
-        """
-        str: `parent`
-            Issues types that are sub-types of other issue types have a parent issue. This property
-            records the parent issue id.
-
-        """
-        return self._parent
+        self.cycle_time = self['cycleTime']
 
     def calculate_lead_time(self, resolution_status: str = 'Done', override: bool = False) -> int:
         """Counts the number of business days an issue took to resolve. This is
@@ -274,21 +298,21 @@ class JiraIssue(dict):
         Returns:
             Number of days to resolve issue or -1 if issue is not resolved.
         """
-        self['lead_time'] = -1
+        self['leadTime'] = -1
 
-        if self._resolutiondate and not override:
-            self['lead_time'] = busday_duration(
-                self._created, self._resolutiondate)
+        if self.resolution_date and not override:
+            self['leadTime'] = busday_duration(
+                self.created, self.resolution_date)
         else:
             resolution_date = None
-            for log in self._flow_log:
+            for log in self.flow_log:
                 if log['state'] == resolution_status:
                     resolution_date = log['entered_at']
             if resolution_date != None:
-                self['lead_time'] = busday_duration(
-                    self._created, resolution_date)
+                self['leadTime'] = busday_duration(
+                    self.created, resolution_date)
 
-        return self['lead_time']
+        return self['leadTime']
 
     def calculate_cycle_time(self, begin_status: str = 'In Progress', resolution_status: str = 'Done', override: bool = False) -> int:
         """Counts the number of business days an issue took to resolve once work had begun. As a
@@ -310,27 +334,27 @@ class JiraIssue(dict):
         Returns:
             Number of days to resolve issue or -1 if issue is not resolved.
         """
-        self['cycle_time'] = -1
+        self['cycleTime'] = -1
 
         start_date = None
-        for log in self._flow_log:
+        for log in self.flow_log:
             if log['state'] == begin_status:
                 start_date = log['entered_at']
         if start_date == None:
-            start_date = self._created
+            start_date = self.created
 
         resolution_date = None
-        if self._resolutiondate:
-            resolution_date = self._resolutiondate
+        if self.resolution_date:
+            resolution_date = self.resolution_date
         elif override:
-            for log in self._flow_log:
+            for log in self.flow_log:
                 if log['state'] == resolution_status:
                     resolution_date = log['entered_at']
 
         if resolution_date != None:
-            self['cycle_time'] = busday_duration(start_date, resolution_date)
+            self['cycleTime'] = busday_duration(start_date, resolution_date)
 
-        return self['cycle_time']
+        return self['cycleTime']
 
     __PROTECTED_FIELDS__ = ['key', 'ttype']
 
@@ -342,8 +366,8 @@ class JiraIssue(dict):
         Args:
             fields_filter:
                 List of field names to include in the filtered copy. Available fields are
-                ``"assignee"``, ``"created"``, ``"cycle_time"``, ``"description"``, ``"fixVersion"``, ``"fixVersion"``, ``"id"``, ``"key"``,
-                ``"labels"``, ``"lead_time"``, ``"parent"``, ``"priority"``, ``"resolution"``, ``"resolutiondate"``, ``"status"``, ``"summary"``, ``"ttype"``,
+                ``"assignee"``, ``"created"``, ``"cycleTime"``, ``"description"``, ``"fixVersion"``, ``"fixVersion"``, ``"id"``, ``"key"``,
+                ``"labels"``, ``"leadTime"``, ``"parent"``, ``"priority"``, ``"resolution"``, ``"resolutiondate"``, ``"status"``, ``"summary"``, ``"ttype"``,
                 ``"url"``, ``"updated_at"``
 
         Returns:
@@ -357,12 +381,12 @@ class JiraIssue(dict):
             for d in to_delete:
                 del filtered[d]
 
-        if 'lead_time' in fields_filter:
-            filtered['lead_time'] = self.get(
-                'lead_time', self.calculate_lead_time())
-        if 'cycle_time' in fields_filter:
-            filtered['cycle_time'] = self.get(
-                'cycle_time', self.calculate_cycle_time())
+        if 'leadTime' in fields_filter:
+            filtered['leadTime'] = self.get(
+                'leadTime', self.calculate_lead_time())
+        if 'cycleTime' in fields_filter:
+            filtered['cycleTime'] = self.get(
+                'cycleTime', self.calculate_cycle_time())
         # We have to copy parent from a property into the map if it is a requested field
         if 'parent' in fields_filter:
             filtered['parent'] = filtered.parent
@@ -429,7 +453,7 @@ class JQLResult(list):
             Currently this is implemented by filtering a list of issues to only contain
             those with a lead time greater that -1.
         """
-        return list(filter(lambda d: d._resolution or d.get('lead_time', -1) > -1, self))
+        return list(filter(lambda d: d.resolution or d.get('leadTime', -1) > -1, self))
 
     def calculate_lead_times(self, *args, **kwargs) -> None:
         """Calculate the lead times for all issues in this JQLResult instance.
@@ -497,8 +521,8 @@ class JQLResult(list):
         Args:
             fields_filter:
                 A list of fields to return on each issue. Available fields are
-                ``"assignee"``, ``"created"``, ``"cycle_time"``, ``"description"``, ``"fixVersion"``, ``"fixVersion"``, ``"id"``, ``"key"``,
-                ``"labels"``, ``"lead_time"``, ``"parent"``, ``"priority"``, ``"resolution"``, ``"resolutiondate"``, ``"status"``, ``"summary"``, ``"ttype"``,
+                ``"assignee"``, ``"created"``, ``"cycleTime"``, ``"description"``, ``"fixVersion"``, ``"fixVersion"``, ``"id"``, ``"key"``,
+                ``"labels"``, ``"leadTime"``, ``"parent"``, ``"priority"``, ``"resolution"``, ``"resolutiondate"``, ``"status"``, ``"summary"``, ``"ttype"``,
                 ``"url"``, ``"updated_at"``
 
             issue_type_filter:
@@ -587,18 +611,19 @@ class Jira:
         'assignee',
         'comment',
         'created',
+        'customfield_10001',
         'description',
         'fixVersions',
-        'project',
+        'issuelinks',
+        'issuetype',
         'labels',
+        'parent',
         'priority',
+        'project',
         'resolution',
         'resolutiondate',
         'status',
         'summary',
-        'parent',
-        'customfield_10001',
-        'issuelinks',
         'updated'
     ]
 
