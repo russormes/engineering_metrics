@@ -144,16 +144,107 @@ class JiraIssue(dict):
     Attributes:
         assignee (Dict):
             Dict of properties parsed out of the JSON response from the server
-        flow_log (:py:class:`FlowLog`):
-            A list of dicts with the following keys:
 
-            ``"entered_at"``
-                When the issue entered the state (datetime)
-            ``"state"``
-                The name of the state the issue entered (string)
-            ``"duration"``
-                Time spent in this state (int)
-        parent (str): If the issue is a sub-types this attribute records the parent issue id.
+            ``"accountId"``
+            ``"accountType"``
+            ``"active"``
+            ``"avatarUrls"``
+            ``"displayName"``
+            ``"emailAddress"``
+            ``"key"``
+            ``"name"``
+            ``"self"``
+            ``"timeZone"``
+
+            where ``"self"`` is the URL to the user in Jira Cloud.
+        comments (List):
+            A list of comments. Each comment of the list is a `dict` with the following keys:
+
+            ``"author"``
+            ``"body"``
+            ``"created"``
+            ``"id"``
+            ``"self"``
+            ``"updateAuthor"``
+            ``"updated"``
+
+            where ``"self"`` is the URL to the comment in Jira Cloud.
+        created (date):
+            Date issue was created.
+        cycle_time (int):
+            This is a calculated attribute based on the date work stared on the issue. It 
+            relies on the issue to have been resolved and looks to calculate the number
+            of hours between work starting and completion of an issue. See ``calculate_cycle_time``
+            for more details.
+        description (string):
+            Details of the issue.
+        fix_version (string):
+            The latest fix version associated with this issue.
+        flow_log (:py:class:`FlowLog`):
+            A list of status changes for the issue. See :py:class:`FlowLog` for more details.
+        id (string):
+            The Jira Cloud id for this issue.
+        issue_links (List):
+            A list of issue keys that are linked to this issue.
+        key (string):
+            The Jira Cloud key for this issue.
+        labels (List):
+            A list of lables added to the issue. Very useful :)
+        lead_time (int):
+            This is a calculated attribute based on the created date of the issue. It 
+            relies on the issue to have been resolved and looks to calculate the number
+            of hours between creation and completion of an issue. See ``calculate_lead_time``
+            for more details.
+        parent (str):
+            If the issue is a sub-types this attribute records the parent issue id.
+        project (string):
+            The Jira Cloud key for the project this issue is associated to.
+        project_name (string):
+            The name of the project this issue is associated to.
+        priority (string):
+            The name of the priority given to this issue.
+        resolution (string):
+            Name description of the resolution of the issue (only if issue is resolved).
+        resolution_date (string):
+            Date issue was resolved.
+        status (Dict):
+            Current status of the issue. Contains the keys:
+
+            ``"description"``
+            ``"iconUrl"``
+            ``"id"``
+            ``"name"``
+            ``"self"``
+            ``"statusCategory"``
+
+             where ``"name"`` is probably the key of most interest. **NOTE: Here the url stored in the**
+             ``"self"`` **key is to the universal description of this staus and not just in the
+             context of our issue.**
+        summary (string):
+            The sumary line for the issues. Think of it as a short description.
+        url (string):
+            URL back to the issue on Jira Cloud.
+        updated_at (string):
+            The date of the last update to this issue.
+
+    A JiraIssue extends the python `dict` class and we add a set of key/value pairs to the JiraIssue
+    that may be of interest to the user whilst building reports. For example, the dictionary values allow 
+    for a JiraIssues to be used as a row in a `pandas dataframe <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.from_dict.html#pandas-dataframe-from-dict>`_
+    with each key mapping to a column.
+
+    For each atrribute (with underscore style naming) you will find a corresponding key entry
+    (in camel case) in the dictionary with the exception of ``assignee`` and ``comments``. In addition 
+    the following keys are added without a corresponding class attribute (but can be generated from an
+    attribute if so desired):
+
+        ``"assigneeName"``
+            The name of hte person assigned to this issue (or None)
+        ``"assigneeEmail"``
+            The email of the assigned persone (or None)
+        ``"lastComment"``
+            If there are any comments on this issue (accessed on the comments attribute) this will be the last of them
+        ``"lastCommentDate"``
+            The date the `lastComment` was created
     """
 
     def __init__(self, issue: JIRA.issue) -> None:
@@ -177,6 +268,7 @@ class JiraIssue(dict):
             map(lambda c: c.raw, issue.fields.comment.comments))
         if len(self.comments) > 0:
             self['lastComment'] = self.comments[0]['body']
+            self['lastCommentDate'] = self.comments[0]['created']
 
         self.created = parse(issue.fields.created)
         self['created'] = self.created
@@ -214,7 +306,7 @@ class JiraIssue(dict):
         self['resolutionDate'] = self.resolution_date
 
         self.status = issue.fields.status.raw
-        self['status'] = self.status
+        self['status'] = self.status['name']
 
         self.summary = issue.fields.summary
         self['summary'] = self.summary
@@ -315,8 +407,8 @@ class JiraIssue(dict):
         return self['leadTime']
 
     def calculate_cycle_time(self, begin_status: str = 'In Progress', resolution_status: str = 'Done', override: bool = False) -> int:
-        """Counts the number of business days an issue took to resolve once work had begun. As a
-        issue is often created before work is stared this method uses the data a issue entered a
+        """Calculates the number of business days an issue took to resolve once work had begun. As a
+        issue is often created before work is stared this method uses the date an issue entered a
         particular state to indicate the start of work. IT assumes a state called "In Progress" if nothing
         is given.
 
