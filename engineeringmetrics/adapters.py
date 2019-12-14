@@ -35,9 +35,13 @@ def busday_duration(date_a: datetime, date_b: datetime = None, interval="hours")
     bus_days = np.busday_count(
         date_a.date(), date_b.date()).item()
     duration = full_duration
-    if full_duration.days > bus_days:
+
+    if full_duration.days == 2 and bus_days == 1:
+        duration = full_duration - timedelta(days=(2))
+    elif full_duration.days > bus_days:
         duration = full_duration - \
             timedelta(days=(full_duration.days - bus_days))
+
     duration_in_s = duration.total_seconds()
 
     def years():
